@@ -5,6 +5,7 @@
 /vendor
 .env
 .env.backup
+.phpunit.cache
 .phpunit.result.cache
 Homestead.json
 Homestead.yaml
@@ -19,3 +20,6 @@ resources/js/v2/node_modules
 
 # ignore generated files.
 public/build
+
+# ignore IDE/editor specific files
+.history
