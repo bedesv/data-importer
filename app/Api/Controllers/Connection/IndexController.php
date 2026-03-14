@@ -70,7 +70,10 @@ final class IndexController extends Controller
             Log::notice(sprintf('Could NOT authenticate with Firefly III at %s', $url));
             Log::error(sprintf('Could not connect to Firefly III: %s', $e->getMessage()));
             Log::debug(sprintf('Using access token "%s" (limited to 25 chars if present)', substr($token, 0, 25)));
-            $statusCode = $e?->response->getStatusCode();
+            $statusCode = 0;
+            if (method_exists($e, 'getResponse') && null !== $e->getResponse()) {
+                $statusCode = $e->getResponse()->getStatusCode();
+            }
 
             return response()->json(['result' => 'NOK', 'message' => $e->getMessage(), 'status_code' => $statusCode]);
         }
