@@ -24,6 +24,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Akahu\Model\Account as AkahuAccount;
 use App\Exceptions\ImporterErrorException;
 use App\Repository\ImportJob\ImportJobRepository;
 use App\Services\LunchFlow\Model\Account as LunchFlowAccount;
@@ -165,7 +166,7 @@ final class ImportJob implements Arrayable
         $serviceAccounts     = [];
         $applicationAccounts = [];
 
-        /** @var LunchFlowAccount|NordigenAccount|SimpleFINAccount $serviceAccount */
+        /** @var AkahuAccount|LunchFlowAccount|NordigenAccount|SimpleFINAccount $serviceAccount */
         foreach ($this->serviceAccounts as $serviceAccount) {
             $serviceAccounts[] = $serviceAccount->toArray();
         }

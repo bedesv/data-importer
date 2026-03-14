@@ -109,6 +109,7 @@
                 "spectre",
                 "file",
                 "simplefin",
+                "akahu",
                 "lunchflow",
                 "sophtron",
                 "eb"
@@ -170,6 +171,18 @@
         "lunch_flow_api_key": {
             "type": "string"
         },
+        "akahu_app_token": {
+            "type": "string"
+        },
+        "akahu_user_token": {
+            "type": "string"
+        },
+        "akahu_internal_account_prefix": {
+            "type": "string"
+        },
+        "akahu_mortgage_payment_pattern": {
+            "type": "string"
+        },
         "conversion": {
             "type": "boolean"
         }
@@ -194,4 +207,3 @@
         "conversion"
     ]
 }
-
