@@ -87,6 +87,10 @@
                 @endif
                 <!-- end of Nordigen / GoCardless options -->
 
+                @if('akahu' === $flow)
+                    @include('import.004-configure.partials.akahu-options')
+                @endif
+
                 <!-- camt.053 options -->
                 @if('file' === $flow && 'camt'  === $configuration->getContentType())
                     @include('import.004-configure.partials.camt-053-options')
