@@ -24,6 +24,7 @@ declare(strict_types=1);
 
 namespace App\Services\Shared\Model;
 
+use App\Services\Akahu\Model\Account as AkahuAccount;
 use App\Exceptions\ImporterErrorException;
 use App\Services\CSV\Converter\Iban as IbanConverter;
 use App\Services\EnableBanking\Model\Account as EnableBankingAccount;
@@ -90,6 +91,24 @@ final class ImportServiceAccount
                     'Balance'      => $account->balance,
                     'Balance date' => $dateString, // SimpleFIN balance timestamp
                     'Organization' => (string) $account->getOrganizationName(),
+                ],
+            ]);
+        }
+        if ($account instanceof AkahuAccount) {
+            return self::fromArray([
+                'id'            => $account->id,
+                'name'          => $account->getDisplayName(),
+                'currency_code' => $account->currency,
+                'iban'          => '',
+                'bban'          => $account->formattedAccount,
+                'status'        => $account->status,
+                'extra'         => [
+                    'Connection'         => $account->connectionName,
+                    'Formatted account'  => $account->formattedAccount,
+                    'Balance'            => $account->balance,
+                    'Available balance'  => $account->availableBalance,
+                    'Currency'           => $account->currency,
+                    'Transactions fresh' => $account->refreshedTransactions,
                 ],
             ]);
         }
@@ -255,6 +274,33 @@ final class ImportServiceAccount
             //                         'type'                 => 'source', // Indicates it's an account from the import source
             //                         'firefly_iii_accounts' => $fireflyAccounts, // Required by x-importer-account component
             //            ];
+        }
+
+        return $return;
+    }
+
+    public static function convertAkahuArray(array $accounts): array
+    {
+        $return = [];
+
+        /** @var AkahuAccount $account */
+        foreach ($accounts as $account) {
+            $return[] = self::fromArray([
+                'id'            => $account->id,
+                'name'          => $account->getDisplayName(),
+                'currency_code' => $account->currency,
+                'iban'          => '',
+                'bban'          => $account->formattedAccount,
+                'status'        => $account->status,
+                'extra'         => [
+                    'Connection'         => $account->connectionName,
+                    'Formatted account'  => $account->formattedAccount,
+                    'Balance'            => $account->balance,
+                    'Available balance'  => $account->availableBalance,
+                    'Currency'           => $account->currency,
+                    'Transactions fresh' => $account->refreshedTransactions,
+                ],
+            ]);
         }
 
         return $return;

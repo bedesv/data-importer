@@ -28,6 +28,7 @@ use App\Console\VerifyJSON;
 use App\Exceptions\ImporterErrorException;
 use App\Http\Controllers\Controller;
 use App\Repository\ImportJob\ImportJobRepository;
+use App\Services\Akahu\Validation\NewJobDataCollector as AkahuNewJobDataCollector;
 use App\Services\Shared\Configuration\Configuration;
 use App\Services\Shared\File\FileContentSherlock;
 use App\Services\SimpleFIN\Validation\NewJobDataCollector as SimpleFINNewJobDataCollector;
@@ -80,7 +81,7 @@ final class UploadController extends Controller
         Log::debug(sprintf('Now at %s', __METHOD__));
         $mainTitle = 'Upload your file(s)';
         $subTitle  = 'Start page and instructions';
-        $settings  = ['simplefin'  => $this->getSimpleFINSettings()];
+        $settings  = ['simplefin'  => $this->getSimpleFINSettings(), 'akahu' => $this->getAkahuSettings()];
         $list      = $this->getConfigurations();
 
         return view('import.003-upload.index', compact('mainTitle', 'subTitle', 'list', 'flow', 'settings'));
@@ -180,6 +181,21 @@ final class UploadController extends Controller
                 $collector->setupToken = (string) $request->get('simplefin_token');
                 $errors                = $collector->validate();
                 $importJob             = $collector->getImportJob();
+                $this->repository->saveToDisk($importJob);
+
+                break;
+
+            case 'akahu':
+                $collector        = new AkahuNewJobDataCollector();
+                $collector->setImportJob($importJob);
+                $collector->input = [
+                    'akahu_app_token'                => (string) $request->get('akahu_app_token', ''),
+                    'akahu_user_token'               => (string) $request->get('akahu_user_token', ''),
+                    'akahu_internal_account_prefix'  => (string) $request->get('akahu_internal_account_prefix', ''),
+                    'akahu_mortgage_payment_pattern' => (string) $request->get('akahu_mortgage_payment_pattern', ''),
+                ];
+                $errors           = $collector->validate();
+                $importJob        = $collector->getImportJob();
                 $this->repository->saveToDisk($importJob);
 
                 break;
