@@ -30,4 +30,14 @@ trait CollectsSettings
     {
         return ['token' => old('simplefin_token') ?? config('simplefin.token')];
     }
+
+    protected function getAkahuSettings(): array
+    {
+        return [
+            'app_token'                => old('akahu_app_token') ?? config('akahu.app_token'),
+            'user_token'               => old('akahu_user_token') ?? config('akahu.user_token'),
+            'internal_account_prefix'  => old('akahu_internal_account_prefix') ?? config('akahu.internal_account_prefix'),
+            'mortgage_payment_pattern' => old('akahu_mortgage_payment_pattern') ?? config('akahu.mortgage_payment_pattern'),
+        ];
+    }
 }
