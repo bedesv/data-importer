@@ -11,5 +11,5 @@
 @endif
 
 <div class="alert alert-info" role="alert">
-    Akahu credentials, internal account prefix, and mortgage payment pattern are read from the importer environment.
+    Akahu credentials are read from the importer environment variables.
 </div>
