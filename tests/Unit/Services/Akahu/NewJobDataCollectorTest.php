@@ -20,19 +20,21 @@ class NewJobDataCollectorTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_form_input_takes_precedence_over_config_and_env_defaults(): void
+    public function test_environment_defaults_take_precedence_over_config_and_form_input(): void
     {
         config()->set('akahu.app_token', 'env-app');
         config()->set('akahu.user_token', 'env-user');
+        config()->set('akahu.internal_account_prefix', 'env-prefix');
+        config()->set('akahu.mortgage_payment_pattern', 'env-pattern');
 
         $service = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')
             ->once()
             ->with(Mockery::on(function (Configuration $configuration): bool {
-                return 'form-app' === $configuration->getAkahuAppToken()
-                    && 'form-user' === $configuration->getAkahuUserToken()
-                    && '12-3456' === $configuration->getAkahuInternalAccountPrefix()
-                    && '^DUE' === $configuration->getAkahuMortgagePaymentPattern();
+                return 'env-app' === $configuration->getAkahuAppToken()
+                    && 'env-user' === $configuration->getAkahuUserToken()
+                    && 'env-prefix' === $configuration->getAkahuInternalAccountPrefix()
+                    && 'env-pattern' === $configuration->getAkahuMortgagePaymentPattern();
             }));
         $service->shouldReceive('validateCredentials')->once()->andReturn([]);
         app()->instance(AkahuService::class, $service);
@@ -60,8 +62,8 @@ class NewJobDataCollectorTest extends TestCase
         $errors = $collector->validate();
 
         $this->assertCount(0, $errors);
-        $this->assertSame('form-app', $collector->getImportJob()->getConfiguration()->getAkahuAppToken());
-        $this->assertSame('form-user', $collector->getImportJob()->getConfiguration()->getAkahuUserToken());
+        $this->assertSame('env-app', $collector->getImportJob()->getConfiguration()->getAkahuAppToken());
+        $this->assertSame('env-user', $collector->getImportJob()->getConfiguration()->getAkahuUserToken());
     }
 
     public function test_collect_accounts_uses_environment_defaults_when_config_is_empty(): void

@@ -20,15 +20,19 @@ class TransactionTransformer
         $amount            = (string) abs((float) $transaction->getAmount());
         $isIncoming        = (float) $transaction->getAmount() > 0;
         $isInternal        = $this->isInternalTransfer($transaction, $configuration);
+        $isMortgagePayment = $this->isMortgagePayment($transaction, $configuration);
         $fireflyAccount    = $this->getMappedAccount($account, $accountMapping, $newAccountConfig);
         $opposingName      = $this->extractOpposingName($transaction);
         $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
+        if (null === $opposingAccount && $isMortgagePayment) {
+            $opposingAccount = $this->findMortgageAccount($transaction, $serviceAccounts);
+        }
         $opposingFirefly   = null !== $opposingAccount ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
         $source            = $isIncoming ? $opposingFirefly : $fireflyAccount;
         $destination       = $isIncoming ? $fireflyAccount : $opposingFirefly;
 
         return [
-            'type'               => $isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal'),
+            'type'               => $isMortgagePayment ? 'withdrawal' : ($isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal')),
             'date'               => $this->formatDate($transaction),
             'amount'             => number_format((float) $amount, 12, '.', ''),
             'description'        => $transaction->getDescription(),
@@ -208,6 +212,63 @@ class TransactionTransformer
         }
 
         return null;
+    }
+
+    private function findMortgageAccount(Transaction $transaction, array $serviceAccounts): ?Account
+    {
+        $reference = $this->extractMortgageAccountReference($transaction->getDescription());
+        if (null === $reference) {
+            return null;
+        }
+
+        $normalizedReference = $this->normalizeAccountNumber($reference);
+        $referenceSuffix     = $this->accountSuffix($reference);
+        $matches             = [];
+        foreach ($serviceAccounts as $serviceAccount) {
+            if (!$serviceAccount instanceof Account) {
+                continue;
+            }
+            if ($serviceAccount->getIdentifier() === $transaction->getAccountId()) {
+                continue;
+            }
+            $candidates = [
+                $serviceAccount->formattedAccount,
+                (string) ($serviceAccount->raw['account_number'] ?? ''),
+                (string) ($serviceAccount->raw['meta']['account_number'] ?? ''),
+            ];
+            foreach ($candidates as $candidate) {
+                if ('' === $candidate) {
+                    continue;
+                }
+                if ($this->normalizeAccountNumber($candidate) === $normalizedReference || $this->accountSuffix($candidate) === $referenceSuffix) {
+                    $matches[$serviceAccount->getIdentifier()] = $serviceAccount;
+                    break;
+                }
+            }
+        }
+
+        return 1 === count($matches) ? array_values($matches)[0] : null;
+    }
+
+    private function extractMortgageAccountReference(string $description): ?string
+    {
+        if (1 === preg_match('/\b(?:TO|FR)\s+([0-9-]+)\b/i', $description, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    private function accountSuffix(string $value): string
+    {
+        preg_match_all('/\d+/', $value, $matches);
+        $parts = $matches[0] ?? [];
+        if ([] === $parts) {
+            return '';
+        }
+        $suffix = ltrim((string) end($parts), '0');
+
+        return '' === $suffix ? '0' : $suffix;
     }
 
     private function normalizeAccountNumber(string $value): string
