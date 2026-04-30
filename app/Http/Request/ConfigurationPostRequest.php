@@ -87,8 +87,6 @@ final class ConfigurationPostRequest extends Request
             'skip_form'                     => $this->convertBoolean($this->get('skip_form')),
             'add_import_tag'                => $this->convertBoolean($this->get('add_import_tag')),
             'pending_transactions'          => $this->convertBoolean($this->get('pending_transactions')),
-            'akahu_internal_account_prefix' => $this->convertToString('akahu_internal_account_prefix'),
-            'akahu_mortgage_payment_pattern'=> $this->convertToString('akahu_mortgage_payment_pattern'),
             'custom_tag'                    => $this->convertToString('custom_tag'),
 
             // duplicate detection:

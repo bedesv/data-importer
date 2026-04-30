@@ -21,24 +21,20 @@ class Credentials
     public static function resolve(Configuration $configuration, array $input = []): self
     {
         $appToken = self::firstNonEmpty(
-            $input['akahu_app_token'] ?? '',
-            $configuration->getAkahuAppToken(),
-            (string) config('akahu.app_token', '')
+            (string) config('akahu.app_token', ''),
+            $configuration->getAkahuAppToken()
         );
         $userToken = self::firstNonEmpty(
-            $input['akahu_user_token'] ?? '',
-            $configuration->getAkahuUserToken(),
-            (string) config('akahu.user_token', '')
+            (string) config('akahu.user_token', ''),
+            $configuration->getAkahuUserToken()
         );
         $internalPrefix = self::firstNonEmpty(
-            $input['akahu_internal_account_prefix'] ?? '',
-            $configuration->getAkahuInternalAccountPrefix(),
-            (string) config('akahu.internal_account_prefix', '')
+            (string) config('akahu.internal_account_prefix', ''),
+            $configuration->getAkahuInternalAccountPrefix()
         );
         $mortgagePattern = self::firstNonEmpty(
-            $input['akahu_mortgage_payment_pattern'] ?? '',
-            $configuration->getAkahuMortgagePaymentPattern(),
-            (string) config('akahu.mortgage_payment_pattern', '')
+            (string) config('akahu.mortgage_payment_pattern', ''),
+            $configuration->getAkahuMortgagePaymentPattern()
         );
 
         return new self($appToken, $userToken, $internalPrefix, $mortgagePattern);

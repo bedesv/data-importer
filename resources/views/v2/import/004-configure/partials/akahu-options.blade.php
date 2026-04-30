@@ -18,21 +18,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group row mb-3">
-                    <label for="akahu_internal_account_prefix" class="col-sm-3 col-form-label">Internal account prefix</label>
-                    <div class="col-sm-9">
-                        <input type="text" class="form-control" id="akahu_internal_account_prefix" name="akahu_internal_account_prefix"
-                               value="{{ $configuration->getAkahuInternalAccountPrefix() }}"
-                               placeholder="Optional prefix used to collapse internal transfers">
-                    </div>
-                </div>
-                <div class="form-group row mb-0">
-                    <label for="akahu_mortgage_payment_pattern" class="col-sm-3 col-form-label">Mortgage payment pattern</label>
-                    <div class="col-sm-9">
-                        <input type="text" class="form-control" id="akahu_mortgage_payment_pattern" name="akahu_mortgage_payment_pattern"
-                               value="{{ $configuration->getAkahuMortgagePaymentPattern() }}"
-                               placeholder="Optional regex for mortgage payment matching">
-                    </div>
+                <div class="alert alert-info mb-0" role="alert">
+                    Akahu credentials, internal account prefix, and mortgage payment pattern are read from the importer environment.
                 </div>
             </div>
         </div>
