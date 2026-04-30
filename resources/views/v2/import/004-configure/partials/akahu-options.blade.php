@@ -18,9 +18,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="alert alert-info mb-0" role="alert">
-                    Akahu credentials, internal account prefix, and mortgage payment pattern are read from the importer environment.
-                </div>
             </div>
         </div>
     </div>
