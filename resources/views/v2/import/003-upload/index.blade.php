@@ -48,7 +48,7 @@
                         @endif
                         @if('akahu' === $flow)
                         <p>
-                            Akahu credentials can come from this form, a saved configuration JSON, or the importer environment. Entering values here overrides the other sources.
+                            Akahu credentials and matching rules are managed through the importer environment.
                         </p>
                         @endif
                     </div>

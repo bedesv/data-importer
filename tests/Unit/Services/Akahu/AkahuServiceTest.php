@@ -13,6 +13,15 @@ use Tests\TestCase;
 
 class AkahuServiceTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config()->set('akahu.app_token', '');
+        config()->set('akahu.user_token', '');
+        config()->set('akahu.internal_account_prefix', '');
+        config()->set('akahu.mortgage_payment_pattern', '');
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();
