@@ -116,12 +116,59 @@ class TransactionTransformerTest extends TestCase
 
         $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
 
-        $this->assertSame('transfer', $result['type']);
+        $this->assertSame('withdrawal', $result['type']);
         $this->assertSame('mortgage-1', $result['external_id']);
         $this->assertSame(['TRANSFER'], $result['tags']);
         $this->assertSame(10, $result['source_id']);
         $this->assertSame(11, $result['destination_id']);
         $this->assertSame('Mortgage', $result['destination_name']);
+    }
+
+    public function test_mortgage_transfer_resolves_loan_from_description_reference_suffix(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray([
+            'flow'                           => 'akahu',
+            'akahu_internal_account_prefix'  => '02-1248',
+            'akahu_mortgage_payment_pattern' => '^DUE \\d{4} (TO|FR) \\d{7}-\\d{2}$',
+        ]);
+        $account       = Account::fromArray([
+            '_id'               => 'acc-main',
+            'name'              => 'Main Account',
+            'formatted_account' => '02-1248-0022275-02',
+            'currency'          => 'NZD',
+            'status'            => 'active',
+        ]);
+        $loan          = Account::fromArray([
+            '_id'               => 'acc-loan',
+            'name'              => 'Fixed Loan',
+            'formatted_account' => '02-1248-0022275-91',
+            'currency'          => 'NZD',
+            'status'            => 'active',
+        ]);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'mortgage-description-reference',
+            '_account'    => 'acc-main',
+            'date'        => '2026-04-24T09:00:00Z',
+            'description' => 'DUE 2404 TO 7960942-91',
+            'amount'      => -1450,
+            'type'        => 'TRANSFER',
+        ]);
+
+        $result = $transformer->transform(
+            $transaction,
+            $account,
+            $configuration,
+            ['acc-main' => 10, 'acc-loan' => 91],
+            [],
+            [$account, $loan]
+        );
+
+        $this->assertSame('withdrawal', $result['type']);
+        $this->assertSame(10, $result['source_id']);
+        $this->assertSame(91, $result['destination_id']);
+        $this->assertSame('Fixed Loan', $result['destination_name']);
+        $this->assertNull($result['category_name']);
     }
 
     public function test_internal_transfer_resolves_account_numbers_when_suffix_width_differs(): void
