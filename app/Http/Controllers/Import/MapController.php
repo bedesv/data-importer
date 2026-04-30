@@ -284,7 +284,7 @@ final class MapController extends Controller
 
             return $data;
         }
-        if ('simplefin' === $importJob->getFlow()) {
+        if ('simplefin' === $importJob->getFlow() || 'akahu' === $importJob->getFlow()) {
             // index 0: expense/revenue account mapping
             $index                          = 0;
             $expenseRevenue                 = config('csv.import_roles.opposing-name') ?? null;
