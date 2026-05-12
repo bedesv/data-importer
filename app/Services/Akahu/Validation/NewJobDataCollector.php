@@ -8,11 +8,12 @@ use App\Models\ImportJob;
 use App\Repository\ImportJob\ImportJobRepository;
 use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Credentials;
+use App\Services\Shared\Configuration\Configuration;
 use App\Services\Shared\Validation\NewJobDataCollectorInterface;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\MessageBag;
 
-class NewJobDataCollector implements NewJobDataCollectorInterface
+final class NewJobDataCollector implements NewJobDataCollectorInterface
 {
     public array $input = [];
     private ImportJob $importJob;
@@ -25,6 +26,7 @@ class NewJobDataCollector implements NewJobDataCollectorInterface
 
     public function validate(): MessageBag
     {
+        $this->importJob->refreshInstanceIdentifier();
         $errors        = new MessageBag();
         $configuration = $this->prepareConfiguration();
         $credentials   = Credentials::resolve($configuration, $this->input);
@@ -55,6 +57,7 @@ class NewJobDataCollector implements NewJobDataCollectorInterface
 
     public function collectAccounts(): MessageBag
     {
+        $this->importJob->refreshInstanceIdentifier();
         $errors        = new MessageBag();
         $configuration = $this->prepareConfiguration();
         /** @var AkahuService $service */
@@ -91,7 +94,7 @@ class NewJobDataCollector implements NewJobDataCollectorInterface
         $this->importJob = $importJob;
     }
 
-    private function prepareConfiguration()
+    private function prepareConfiguration(): Configuration
     {
         $configuration = $this->importJob->getConfiguration();
         $credentials   = Credentials::resolve($configuration, $this->input);

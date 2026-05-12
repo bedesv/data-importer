@@ -40,7 +40,7 @@ class Transaction
 
     public function getDate(): Carbon
     {
-        return Carbon::parse((string) ($this->raw['date'] ?? 'now'));
+        return Carbon::parse((string) ($this->raw['date'] ?? 'now'), 'UTC');
     }
 
     public function getDescription(): string
