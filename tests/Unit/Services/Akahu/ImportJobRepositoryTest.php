@@ -36,6 +36,7 @@ class ImportJobRepositoryTest extends TestCase
                 'status'   => 'active',
             ]),
         ]);
+        $akahu->shouldReceive('needsRefresh')->once()->andReturn(false);
         app()->instance(AkahuService::class, $akahu);
 
         $currencies = Mockery::mock(MapperInterface::class);

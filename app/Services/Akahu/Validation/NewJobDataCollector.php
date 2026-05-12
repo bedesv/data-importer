@@ -37,6 +37,12 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
         if ('' === $credentials->userToken) {
             $errors->add('akahu_user_token', 'Akahu user token is required.');
         }
+
+        $mortgagePattern = $configuration->getAkahuMortgagePaymentPattern();
+        if ('' !== $mortgagePattern && false === @preg_match(sprintf('~%s~', str_replace('~', '\~', $mortgagePattern)), '')) {
+            $errors->add('akahu_mortgage_payment_pattern', sprintf('Mortgage payment pattern "%s" is not a valid regular expression.', $mortgagePattern));
+        }
+
         if ($errors->count() > 0) {
             return $errors;
         }
@@ -71,6 +77,18 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
             $errors->add('connection', sprintf('Failed to connect to Akahu: %s', $e->getMessage()));
 
             return $errors;
+        }
+
+        // Trigger a background refresh now so data is ready by the time conversion runs.
+        // We don't wait here — RoutineManager::start() will wait if needed.
+        $allIds = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
+        if ($service->needsRefresh($accounts, $allIds)) {
+            try {
+                $service->refreshAccounts();
+                Log::debug('Akahu: triggered early account refresh during account collection.');
+            } catch (\Throwable $e) {
+                Log::warning('Akahu: early refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);
+            }
         }
 
         $this->importJob->setServiceAccounts($accounts);
