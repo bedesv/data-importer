@@ -15,10 +15,14 @@ final class TransactionTransformer
     {
         $isMortgagePayment = $this->isMortgagePayment($transaction, $configuration);
         $isInternal        = $this->isInternalTransfer($transaction, $configuration, $isMortgagePayment);
+        $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
+        if (null === $opposingAccount && $isMortgagePayment) {
+            $opposingAccount = $this->findMortgageAccount($transaction, $serviceAccounts);
+        }
 
-        // Skip the "wrong side" of internal transfers — each pair is imported once.
-        // Regular transfers keep the credit side; mortgage payments keep the debit side.
-        if ($isInternal) {
+        // Skip the "wrong side" of internal transfers only when both sides are being imported.
+        // If the opposing account is absent from the import set, keep this transaction as-is.
+        if ($isInternal && null !== $opposingAccount) {
             $amount = (float) $transaction->getAmount();
             if ($isMortgagePayment ? $amount >= 0 : $amount <= 0) {
                 return [];
@@ -29,10 +33,6 @@ final class TransactionTransformer
         $isIncoming = (float) $transaction->getAmount() > 0;
         $fireflyAccount    = $this->getMappedAccount($account, $accountMapping, $newAccountConfig);
         $opposingName      = $this->extractOpposingName($transaction);
-        $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
-        if (null === $opposingAccount && $isMortgagePayment) {
-            $opposingAccount = $this->findMortgageAccount($transaction, $serviceAccounts);
-        }
         $opposingFirefly   = null !== $opposingAccount ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
         $source            = $isIncoming ? $opposingFirefly : $fireflyAccount;
         $destination       = $isIncoming ? $fireflyAccount : $opposingFirefly;
@@ -78,12 +78,15 @@ final class TransactionTransformer
 
     private function isInternalTransfer(Transaction $transaction, Configuration $configuration, bool $isMortgagePayment): bool
     {
-        $prefix = $configuration->getAkahuInternalAccountPrefix();
-        if ('' === $prefix || 'TRANSFER' !== $transaction->getType()) {
+        if ('TRANSFER' !== $transaction->getType()) {
             return false;
         }
         if ($isMortgagePayment) {
             return true;
+        }
+        $prefix = $configuration->getAkahuInternalAccountPrefix();
+        if ('' === $prefix) {
+            return false;
         }
 
         $raw          = $transaction->toArray();
