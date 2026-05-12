@@ -15,13 +15,13 @@ use App\Services\Shared\Conversion\RoutineManagerInterface;
 use Illuminate\Support\Facades\Log;
 use Override;
 
-class RoutineManager implements RoutineManagerInterface
+final class RoutineManager implements RoutineManagerInterface
 {
     use CreatesAccounts;
 
     private readonly AkahuService $service;
     private readonly TransactionTransformer $transformer;
-    private readonly ImportJobRepository $repository;
+    protected ImportJobRepository $repository;
     private ImportJob $importJob;
 
     public function __construct(ImportJob $importJob)
