@@ -10,7 +10,9 @@ use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Model\Account;
 use App\Services\CSV\Mapper\MapperInterface;
 use App\Services\CSV\Mapper\TransactionCurrencies;
+use App\Services\Session\Constants;
 use App\Services\Shared\Configuration\Configuration;
+use GrumpyDictator\FFIIIApiSupport\Model\Account as FireflyAccount;
 use Mockery;
 use Tests\TestCase;
 
@@ -48,6 +50,20 @@ class ImportJobRepositoryTest extends TestCase
         ]);
         $job->setFlow('akahu');
         $job->setConfiguration($configuration);
+
+        // Pre-populate Firefly III accounts to prevent live network calls in parseImportJob.
+        $fireflyAccount = FireflyAccount::fromArray([
+            'id'                   => 1,
+            'name'                 => 'Checking',
+            'type'                 => 'asset',
+            'iban'                 => null,
+            'account_number'       => null,
+            'bic'                  => null,
+            'currency_code'        => 'NZD',
+            'current_balance'      => null,
+            'current_balance_date' => null,
+        ]);
+        $job->setApplicationAccounts([Constants::ASSET_ACCOUNTS => [1 => $fireflyAccount], Constants::LIABILITIES => []]);
 
         $repository = new ImportJobRepository();
         $messages   = $repository->parseImportJob($job);

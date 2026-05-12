@@ -13,14 +13,20 @@ final class TransactionTransformer
 {
     public function transform(Transaction $transaction, Account $account, Configuration $configuration, array $accountMapping, array $newAccountConfig, array $serviceAccounts = []): array
     {
-        if ($this->shouldSkip($transaction, $configuration)) {
-            return [];
+        $isMortgagePayment = $this->isMortgagePayment($transaction, $configuration);
+        $isInternal        = $this->isInternalTransfer($transaction, $configuration, $isMortgagePayment);
+
+        // Skip the "wrong side" of internal transfers — each pair is imported once.
+        // Regular transfers keep the credit side; mortgage payments keep the debit side.
+        if ($isInternal) {
+            $amount = (float) $transaction->getAmount();
+            if ($isMortgagePayment ? $amount >= 0 : $amount <= 0) {
+                return [];
+            }
         }
 
-        $amount            = (string) abs((float) $transaction->getAmount());
-        $isIncoming        = (float) $transaction->getAmount() > 0;
-        $isInternal        = $this->isInternalTransfer($transaction, $configuration);
-        $isMortgagePayment = $this->isMortgagePayment($transaction, $configuration);
+        $amount     = (string) abs((float) $transaction->getAmount());
+        $isIncoming = (float) $transaction->getAmount() > 0;
         $fireflyAccount    = $this->getMappedAccount($account, $accountMapping, $newAccountConfig);
         $opposingName      = $this->extractOpposingName($transaction);
         $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
@@ -40,7 +46,7 @@ final class TransactionTransformer
             'source_name'        => $source['name'] ?? null,
             'destination_id'     => $destination['id'] ?? null,
             'destination_name'   => $destination['name'] ?? null,
-            'currency_code'      => '' !== $account->currency ? $account->currency : 'NZD',
+            'currency_code'      => '' !== $account->currency ? $account->currency : config('akahu.default_currency', 'NZD'),
             'category_name'      => $isInternal ? null : $this->extractCategory($transaction),
             'reconciled'         => false,
             'notes'              => $this->buildNotes($transaction),
@@ -70,27 +76,13 @@ final class TransactionTransformer
             ->format('Y-m-d');
     }
 
-    private function shouldSkip(Transaction $transaction, Configuration $configuration): bool
-    {
-        if (!$this->isInternalTransfer($transaction, $configuration)) {
-            return false;
-        }
-
-        $amount = (float) $transaction->getAmount();
-        if ($this->isMortgagePayment($transaction, $configuration)) {
-            return $amount >= 0;
-        }
-
-        return $amount <= 0;
-    }
-
-    private function isInternalTransfer(Transaction $transaction, Configuration $configuration): bool
+    private function isInternalTransfer(Transaction $transaction, Configuration $configuration, bool $isMortgagePayment): bool
     {
         $prefix = $configuration->getAkahuInternalAccountPrefix();
         if ('' === $prefix || 'TRANSFER' !== $transaction->getType()) {
             return false;
         }
-        if ($this->isMortgagePayment($transaction, $configuration)) {
+        if ($isMortgagePayment) {
             return true;
         }
 
@@ -110,7 +102,7 @@ final class TransactionTransformer
             return false;
         }
 
-        $result = @preg_match(sprintf('/%s/', trim($pattern, '/')), $transaction->getDescription());
+        $result = @preg_match(sprintf('~%s~', str_replace('~', '\~', $pattern)), $transaction->getDescription());
         if (false === $result) {
             Log::warning(sprintf('Akahu mortgage payment pattern "%s" is invalid; skipping mortgage classification.', $pattern));
 
