@@ -1071,8 +1071,8 @@ final class Configuration
             // simplefin configuration
             'pending_transactions'         => $this->pendingTransactions,
             'access_token'                 => $this->accessToken,
-            'akahu_app_token'              => $this->akahuAppToken,
-            'akahu_user_token'             => $this->akahuUserToken,
+
+            // akahu configuration
             'akahu_internal_account_prefix'=> $this->akahuInternalAccountPrefix,
             'akahu_mortgage_payment_pattern' => $this->akahuMortgagePaymentPattern,
 
