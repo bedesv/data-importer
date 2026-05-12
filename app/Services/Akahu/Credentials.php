@@ -22,19 +22,23 @@ class Credentials
     {
         $appToken = self::firstNonEmpty(
             (string) config('akahu.app_token', ''),
-            $configuration->getAkahuAppToken()
+            $input['akahu_app_token'] ?? '',
+            $configuration->getAkahuAppToken(),
         );
         $userToken = self::firstNonEmpty(
             (string) config('akahu.user_token', ''),
-            $configuration->getAkahuUserToken()
+            $input['akahu_user_token'] ?? '',
+            $configuration->getAkahuUserToken(),
         );
         $internalPrefix = self::firstNonEmpty(
             (string) config('akahu.internal_account_prefix', ''),
-            $configuration->getAkahuInternalAccountPrefix()
+            $input['akahu_internal_account_prefix'] ?? '',
+            $configuration->getAkahuInternalAccountPrefix(),
         );
         $mortgagePattern = self::firstNonEmpty(
             (string) config('akahu.mortgage_payment_pattern', ''),
-            $configuration->getAkahuMortgagePaymentPattern()
+            $input['akahu_mortgage_payment_pattern'] ?? '',
+            $configuration->getAkahuMortgagePaymentPattern(),
         );
 
         return new self($appToken, $userToken, $internalPrefix, $mortgagePattern);
