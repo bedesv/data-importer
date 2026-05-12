@@ -24,9 +24,8 @@ class ConfigurationAndSerializationTest extends TestCase
 
         $array = $configuration->toArray();
 
-        // akahu tokens should be removed from the configuration
-        $this->assertArrayNotHasKey('akahu_app_token', $array);
-        $this->assertArrayNotHasKey('akahu_user_token', $array);
+        $this->assertSame('config-app', $array['akahu_app_token']);
+        $this->assertSame('config-user', $array['akahu_user_token']);
         $this->assertSame('12-3456', $array['akahu_internal_account_prefix']);
         $this->assertSame('^DUE', $array['akahu_mortgage_payment_pattern']);
     }

@@ -31,7 +31,7 @@ class Account
         $model->currency              = (string) ($data['currency'] ?? '');
         $model->status                = (string) ($data['status'] ?? '');
         $model->balance               = isset($data['balance']['current']) ? (string) $data['balance']['current'] : (isset($data['balance']) && is_scalar($data['balance']) ? (string) $data['balance'] : null);
-        $model->availableBalance      = isset($data['balance']['available']) ? (string) $data['balance']['available'] : ($data['available_balance'] ?? null);
+        $model->availableBalance      = isset($data['balance']['available']) ? (string) $data['balance']['available'] : (isset($data['available_balance']) && is_scalar($data['available_balance']) ? (string) $data['available_balance'] : null);
         $model->refreshedTransactions = isset($data['refreshed']['transactions']) ? (string) $data['refreshed']['transactions'] : ($data['refreshed_transactions'] ?? null);
         $model->raw                   = $data['raw'] ?? $data;
 
