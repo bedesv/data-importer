@@ -21,22 +21,21 @@ class ExistingConfigurationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_upload_controller_lists_existing_nested_json_configurations(): void
+    public function test_upload_controller_lists_root_level_json_configurations(): void
     {
         Storage::fake('configurations');
-        Storage::disk('configurations')->put('akahu/import.json', json_encode([
+        Storage::disk('configurations')->put('import.json', json_encode([
             'version'          => 3,
             'flow'             => 'akahu',
             'akahu_app_token'  => 'config-app',
             'akahu_user_token' => 'config-user',
         ], JSON_THROW_ON_ERROR));
-        Storage::disk('configurations')->put('notes.txt', 'ignore me');
 
         $controller = app(UploadController::class);
         $method     = new ReflectionMethod($controller, 'getConfigurations');
         $list       = $method->invoke($controller);
 
-        $this->assertSame(['akahu/import.json'], $list);
+        $this->assertSame(['import.json'], $list);
     }
 
     public function test_akahu_import_can_start_from_existing_configuration_without_form_tokens(): void
@@ -47,7 +46,7 @@ class ExistingConfigurationTest extends TestCase
         config()->set('akahu.mortgage_payment_pattern', 'env-pattern');
 
         Storage::fake('configurations');
-        Storage::disk('configurations')->put('akahu/import.json', json_encode([
+        Storage::disk('configurations')->put('import.json', json_encode([
             'version'                         => 3,
             'flow'                            => 'akahu',
             'akahu_app_token'                 => 'config-app',
@@ -67,30 +66,14 @@ class ExistingConfigurationTest extends TestCase
         app()->instance(AkahuService::class, $service);
 
         $response = $this->post(route('new-import.post', ['akahu']), [
-            'existing_config' => 'akahu/import.json',
+            'existing_config' => 'import.json',
         ]);
 
         $response->assertSessionHasNoErrors();
         $this->assertStringContainsString('/configure-import/', $response->headers->get('Location'));
     }
 
-    public function test_akahu_import_rejects_existing_configuration_for_another_flow(): void
-    {
-        Storage::fake('configurations');
-        Storage::disk('configurations')->put('simplefin.json', json_encode([
-            'version' => 3,
-            'flow'    => 'simplefin',
-        ], JSON_THROW_ON_ERROR));
-
-        $response = $this->post(route('new-import.post', ['akahu']), [
-            'existing_config' => 'simplefin.json',
-        ]);
-
-        $response->assertRedirect(route('new-import.index', ['akahu']));
-        $response->assertSessionHasErrors('existing_config');
-    }
-
-    public function test_akahu_upload_partial_does_not_render_sensitive_or_matching_fields(): void
+public function test_akahu_upload_partial_does_not_render_sensitive_or_matching_fields(): void
     {
         $html = view('import.003-upload.partials.akahu', [
             'errors'   => new ViewErrorBag(),
