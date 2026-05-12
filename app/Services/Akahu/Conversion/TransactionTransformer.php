@@ -7,9 +7,8 @@ namespace App\Services\Akahu\Conversion;
 use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\Transaction;
 use App\Services\Shared\Configuration\Configuration;
-use Carbon\Carbon;
 
-class TransactionTransformer
+final class TransactionTransformer
 {
     public function transform(Transaction $transaction, Account $account, Configuration $configuration, array $accountMapping, array $newAccountConfig, array $serviceAccounts = []): array
     {
@@ -65,7 +64,7 @@ class TransactionTransformer
 
     private function formatDate(Transaction $transaction): string
     {
-        return Carbon::parse($transaction->getDate(), config('app.timezone'))
+        return $transaction->getDate()
             ->setTimezone(config('app.timezone'))
             ->format('Y-m-d');
     }
@@ -116,10 +115,10 @@ class TransactionTransformer
     private function extractOpposingName(Transaction $transaction): string
     {
         $raw = $transaction->toArray();
-        if (isset($raw['merchant']['name']) && '' !== (string) $raw['merchant']['name']) {
+        if (array_key_exists('merchant', $raw) && is_array($raw['merchant']) && array_key_exists('name', $raw['merchant']) && '' !== (string) $raw['merchant']['name']) {
             return (string) $raw['merchant']['name'];
         }
-        if (isset($raw['meta']['other_account']) && '' !== (string) $raw['meta']['other_account']) {
+        if (array_key_exists('meta', $raw) && is_array($raw['meta']) && array_key_exists('other_account', $raw['meta']) && '' !== (string) $raw['meta']['other_account']) {
             return (string) $raw['meta']['other_account'];
         }
 
@@ -141,7 +140,7 @@ class TransactionTransformer
         }
         if (is_array($category)) {
             foreach (['name', 'group', 'label'] as $key) {
-                if (isset($category[$key]) && '' !== (string) $category[$key]) {
+                if (array_key_exists($key, $category) && '' !== (string) $category[$key]) {
                     return (string) $category[$key];
                 }
             }
