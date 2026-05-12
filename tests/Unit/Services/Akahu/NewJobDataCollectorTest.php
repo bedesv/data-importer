@@ -153,6 +153,7 @@ class NewJobDataCollectorTest extends TestCase
                     'status'    => 'active',
                 ]),
             ]);
+        $service->shouldReceive('needsRefresh')->once()->andReturn(false);
         app()->instance(AkahuService::class, $service);
 
         $job           = ImportJob::createNew();

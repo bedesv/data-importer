@@ -9,11 +9,12 @@ class PendingTransaction extends Transaction
     public static function fromArray(array $data): self
     {
         $model      = new self();
-        $synthetic  = self::syntheticIdentifier($data);
+        $providedId = isset($data['_id']) && '' !== (string) $data['_id'] ? (string) $data['_id'] : null;
+        $id         = $providedId ?? self::syntheticIdentifier($data);
         $model->raw = [
             ...$data,
-            '_id'        => $synthetic,
-            'hash'       => $synthetic,
+            '_id'        => $id,
+            'hash'       => $id,
             'created_at' => $data['updated_at'] ?? null,
         ];
 

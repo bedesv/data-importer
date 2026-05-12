@@ -1073,7 +1073,9 @@ final class Configuration
             'access_token'                 => $this->accessToken,
 
             // akahu configuration
-            'akahu_internal_account_prefix'=> $this->akahuInternalAccountPrefix,
+            'akahu_app_token'               => $this->akahuAppToken,
+            'akahu_user_token'              => $this->akahuUserToken,
+            'akahu_internal_account_prefix' => $this->akahuInternalAccountPrefix,
             'akahu_mortgage_payment_pattern' => $this->akahuMortgagePaymentPattern,
 
             // settings for spectre + nordigen
