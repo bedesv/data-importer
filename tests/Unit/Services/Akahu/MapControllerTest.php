@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\Akahu;
 
 use App\Http\Controllers\Import\MapController;
 use App\Models\ImportJob;
+use App\Services\CSV\Mapper\MapperInterface;
 use App\Services\CSV\Mapper\OpposingAccounts;
 use App\Services\Shared\Configuration\Configuration;
 use Mockery;
@@ -22,7 +23,7 @@ class MapControllerTest extends TestCase
 
     public function test_akahu_flow_can_build_data_mapping_information_from_converted_transactions(): void
     {
-        $mapper = Mockery::mock(OpposingAccounts::class);
+        $mapper = Mockery::mock(MapperInterface::class);
         $mapper->shouldReceive('getMap')
             ->once()
             ->andReturn([

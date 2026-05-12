@@ -8,6 +8,7 @@ use App\Models\ImportJob;
 use App\Repository\ImportJob\ImportJobRepository;
 use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Model\Account;
+use App\Services\CSV\Mapper\MapperInterface;
 use App\Services\CSV\Mapper\TransactionCurrencies;
 use App\Services\Shared\Configuration\Configuration;
 use Mockery;
@@ -35,7 +36,7 @@ class ImportJobRepositoryTest extends TestCase
         ]);
         app()->instance(AkahuService::class, $akahu);
 
-        $currencies = Mockery::mock(TransactionCurrencies::class);
+        $currencies = Mockery::mock(MapperInterface::class);
         $currencies->shouldReceive('getMap')->once()->andReturn([]);
         app()->instance(TransactionCurrencies::class, $currencies);
 
