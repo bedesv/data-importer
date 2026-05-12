@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Akahu\Model;
 
-use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 
 class Account
 {
@@ -73,12 +73,12 @@ class Account
         return $this->id;
     }
 
-    public function getRefreshedTransactions(): ?Carbon
+    public function getRefreshedTransactions(): ?CarbonImmutable
     {
         if (null === $this->refreshedTransactions || '' === $this->refreshedTransactions) {
             return null;
         }
 
-        return Carbon::parse($this->refreshedTransactions);
+        return CarbonImmutable::parse($this->refreshedTransactions);
     }
 }

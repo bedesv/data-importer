@@ -7,6 +7,7 @@ namespace App\Services\Akahu\Conversion;
 use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\Transaction;
 use App\Services\Shared\Configuration\Configuration;
+use Illuminate\Support\Facades\Log;
 
 final class TransactionTransformer
 {
@@ -109,7 +110,14 @@ final class TransactionTransformer
             return false;
         }
 
-        return 1 === @preg_match(sprintf('/%s/', trim($pattern, '/')), $transaction->getDescription());
+        $result = @preg_match(sprintf('/%s/', trim($pattern, '/')), $transaction->getDescription());
+        if (false === $result) {
+            Log::warning(sprintf('Akahu mortgage payment pattern "%s" is invalid; skipping mortgage classification.', $pattern));
+
+            return false;
+        }
+
+        return 1 === $result;
     }
 
     private function extractOpposingName(Transaction $transaction): string
