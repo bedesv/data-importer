@@ -55,6 +55,9 @@ final class DownloadController extends Controller
         $configuration = $importJob->getConfiguration();
         $array         = $configuration->toArray();
 
+        // strip credentials that should not be distributed in config files
+        unset($array['akahu_app_token'], $array['akahu_user_token']);
+
         // make sure that "mapping" is an empty object when downloading.
         if (is_array($array['mapping']) && 0 === count($array['mapping'])) {
             $array['mapping'] = new stdClass();

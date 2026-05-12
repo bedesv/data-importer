@@ -137,7 +137,14 @@ class AkahuService
      */
     public function needsRefresh(array $accounts, array $selectedAccountIds): bool
     {
-        $cutoff = CarbonImmutable::now()->subHours((int) config('akahu.stale_refresh_hours', 2));
+        $cutoff      = CarbonImmutable::now()->subHours((int) config('akahu.stale_refresh_hours', 2));
+        $returnedIds = array_map(static fn (Account $a): string => $a->getIdentifier(), $accounts);
+
+        foreach ($selectedAccountIds as $selectedId) {
+            if (!in_array($selectedId, $returnedIds, true)) {
+                return true;
+            }
+        }
 
         foreach ($accounts as $account) {
             if (!in_array($account->getIdentifier(), $selectedAccountIds, true)) {
