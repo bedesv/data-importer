@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 return [
     'base_url'                     => env('AKAHU_BASE_URL', 'https://api.akahu.io/v1'),
+    'default_currency'             => env('AKAHU_DEFAULT_CURRENCY', 'NZD'),
     'app_token'                    => env('AKAHU_APP_TOKEN', ''),
     'user_token'                   => env('AKAHU_USER_TOKEN', ''),
     'internal_account_prefix'      => env('AKAHU_INTERNAL_ACCOUNT_PREFIX', ''),
