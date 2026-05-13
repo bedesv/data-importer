@@ -6,6 +6,7 @@ namespace App\Services\Akahu\Conversion;
 
 use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\Transaction;
+use App\Services\CSV\Converter\Amount;
 use App\Services\Shared\Configuration\Configuration;
 use Illuminate\Support\Facades\Log;
 
@@ -20,17 +21,22 @@ final class TransactionTransformer
             $opposingAccount = $this->findMortgageAccount($transaction, $serviceAccounts);
         }
 
+        $rawAmount = $transaction->getAmount();
+        if (0 === bccomp('0', $rawAmount, 12)) {
+            return [];
+        }
+
         // Skip the "wrong side" of internal transfers only when both sides are being imported.
         // If the opposing account is absent from the import set, keep this transaction as-is.
         if ($isInternal && null !== $opposingAccount) {
-            $amount = (float) $transaction->getAmount();
-            if ($isMortgagePayment ? $amount >= 0 : $amount <= 0) {
+            $compareToZero = bccomp($rawAmount, '0', 12);
+            if ($isMortgagePayment ? $compareToZero >= 0 : $compareToZero <= 0) {
                 return [];
             }
         }
 
-        $amount     = (string) abs((float) $transaction->getAmount());
-        $isIncoming = (float) $transaction->getAmount() > 0;
+        $amount           = bcadd(Amount::positive($rawAmount), '0', 12);
+        $isIncoming       = -1 === bccomp('0', $rawAmount, 12);
         $fireflyAccount    = $this->getMappedAccount($account, $accountMapping, $newAccountConfig);
         $opposingName      = $this->extractOpposingName($transaction);
         $opposingFirefly   = null !== $opposingAccount ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
@@ -40,7 +46,7 @@ final class TransactionTransformer
         return [
             'type'               => $isMortgagePayment ? 'withdrawal' : ($isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal')),
             'date'               => $this->formatDate($transaction),
-            'amount'             => number_format((float) $amount, 12, '.', ''),
+            'amount'             => $amount,
             'description'        => $transaction->getDescription(),
             'source_id'          => $source['id'] ?? null,
             'source_name'        => $source['name'] ?? null,
