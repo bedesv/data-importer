@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Akahu\Model;
 
+use App\Exceptions\ImporterErrorException;
 use Carbon\Carbon;
 
 class Transaction
@@ -40,7 +41,12 @@ class Transaction
 
     public function getDate(): Carbon
     {
-        return Carbon::parse((string) ($this->raw['date'] ?? 'now'), 'UTC');
+        $raw = (string) ($this->raw['date'] ?? '');
+        if ('' === $raw) {
+            throw new ImporterErrorException(sprintf('Akahu transaction %s has no date.', $this->getIdentifier()));
+        }
+
+        return Carbon::parse($raw, 'UTC');
     }
 
     public function getDescription(): string

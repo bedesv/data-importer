@@ -201,9 +201,6 @@ final class ImportJobRepository
                 $messageBag    = $validator->collectAccounts();
                 $importJob     = $validator->getImportJob();
                 $configuration = $importJob->getConfiguration();
-                if ('classic' === $configuration->getDuplicateDetectionMethod()) {
-                    $configuration->setDuplicateDetectionMethod('cell');
-                }
 
                 break;
 
