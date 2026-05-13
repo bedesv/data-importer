@@ -8,31 +8,17 @@ use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\Transaction;
 use App\Services\CSV\Converter\Amount;
 use App\Services\Shared\Configuration\Configuration;
-use Illuminate\Support\Facades\Log;
 
 final class TransactionTransformer
 {
     public function transform(Transaction $transaction, Account $account, Configuration $configuration, array $accountMapping, array $newAccountConfig, array $serviceAccounts = []): array
     {
-        $isMortgagePayment = $this->isMortgagePayment($transaction, $configuration);
-        $isInternal        = $this->isInternalTransfer($transaction, $configuration, $isMortgagePayment);
         $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
-        if (null === $opposingAccount && $isMortgagePayment) {
-            $opposingAccount = $this->findMortgageAccount($transaction, $serviceAccounts);
-        }
+        $isInternal        = $this->isInternalTransfer($transaction, $opposingAccount);
 
         $rawAmount = $transaction->getAmount();
         if (0 === bccomp('0', $rawAmount, 12)) {
             return [];
-        }
-
-        // Skip the "wrong side" of internal transfers only when both sides are being imported.
-        // If the opposing account is absent from the import set, keep this transaction as-is.
-        if ($isInternal && null !== $opposingAccount) {
-            $compareToZero = bccomp($rawAmount, '0', 12);
-            if ($isMortgagePayment ? $compareToZero >= 0 : $compareToZero <= 0) {
-                return [];
-            }
         }
 
         $amount           = bcadd(Amount::positive($rawAmount), '0', 12);
@@ -44,7 +30,7 @@ final class TransactionTransformer
         $destination       = $isIncoming ? $fireflyAccount : $opposingFirefly;
 
         return [
-            'type'               => $isMortgagePayment ? 'withdrawal' : ($isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal')),
+            'type'               => $isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal'),
             'date'               => $this->formatDate($transaction),
             'amount'             => $amount,
             'description'        => $transaction->getDescription(),
@@ -82,43 +68,9 @@ final class TransactionTransformer
             ->format('Y-m-d');
     }
 
-    private function isInternalTransfer(Transaction $transaction, Configuration $configuration, bool $isMortgagePayment): bool
+    private function isInternalTransfer(Transaction $transaction, ?Account $opposingAccount): bool
     {
-        if ('TRANSFER' !== $transaction->getType()) {
-            return false;
-        }
-        if ($isMortgagePayment) {
-            return true;
-        }
-        $prefix = $configuration->getAkahuInternalAccountPrefix();
-        if ('' === $prefix) {
-            return false;
-        }
-
-        $raw          = $transaction->toArray();
-        $otherAccount = (string) (($raw['meta']['other_account'] ?? '') ?: '');
-        if ('' !== $otherAccount && str_starts_with($otherAccount, $prefix)) {
-            return true;
-        }
-
-        return str_contains($transaction->getDescription(), $prefix);
-    }
-
-    private function isMortgagePayment(Transaction $transaction, Configuration $configuration): bool
-    {
-        $pattern = $configuration->getAkahuMortgagePaymentPattern();
-        if ('' === $pattern || 'TRANSFER' !== $transaction->getType()) {
-            return false;
-        }
-
-        $result = @preg_match(sprintf('~%s~', str_replace('~', '\~', $pattern)), $transaction->getDescription());
-        if (false === $result) {
-            Log::warning(sprintf('Akahu mortgage payment pattern "%s" is invalid; skipping mortgage classification.', $pattern));
-
-            return false;
-        }
-
-        return 1 === $result;
+        return 'TRANSFER' === $transaction->getType() && null !== $opposingAccount;
     }
 
     private function extractOpposingName(Transaction $transaction): string
@@ -188,6 +140,9 @@ final class TransactionTransformer
         return array_values(array_unique($tags));
     }
 
+    /**
+     * Attempts to match the opposing account number to an existing Firefly III account
+     */
     private function findOpposingAccount(Transaction $transaction, array $serviceAccounts): ?Account
     {
         $raw          = $transaction->toArray();
@@ -220,63 +175,6 @@ final class TransactionTransformer
         }
 
         return null;
-    }
-
-    private function findMortgageAccount(Transaction $transaction, array $serviceAccounts): ?Account
-    {
-        $reference = $this->extractMortgageAccountReference($transaction->getDescription());
-        if (null === $reference) {
-            return null;
-        }
-
-        $normalizedReference = $this->normalizeAccountNumber($reference);
-        $referenceSuffix     = $this->accountSuffix($reference);
-        $matches             = [];
-        foreach ($serviceAccounts as $serviceAccount) {
-            if (!$serviceAccount instanceof Account) {
-                continue;
-            }
-            if ($serviceAccount->getIdentifier() === $transaction->getAccountId()) {
-                continue;
-            }
-            $candidates = [
-                $serviceAccount->formattedAccount,
-                (string) ($serviceAccount->raw['account_number'] ?? ''),
-                (string) ($serviceAccount->raw['meta']['account_number'] ?? ''),
-            ];
-            foreach ($candidates as $candidate) {
-                if ('' === $candidate) {
-                    continue;
-                }
-                if ($this->normalizeAccountNumber($candidate) === $normalizedReference || $this->accountSuffix($candidate) === $referenceSuffix) {
-                    $matches[$serviceAccount->getIdentifier()] = $serviceAccount;
-                    break;
-                }
-            }
-        }
-
-        return 1 === count($matches) ? array_values($matches)[0] : null;
-    }
-
-    private function extractMortgageAccountReference(string $description): ?string
-    {
-        if (1 === preg_match('/\b(?:TO|FR)\s+([0-9-]+)\b/i', $description, $matches)) {
-            return $matches[1];
-        }
-
-        return null;
-    }
-
-    private function accountSuffix(string $value): string
-    {
-        preg_match_all('/\d+/', $value, $matches);
-        $parts = $matches[0] ?? [];
-        if ([] === $parts) {
-            return '';
-        }
-        $suffix = ltrim((string) end($parts), '0');
-
-        return '' === $suffix ? '0' : $suffix;
     }
 
     private function normalizeAccountNumber(string $value): string

@@ -33,12 +33,7 @@ trait CollectsSettings
 
     protected function getAkahuSettings(): array
     {
-        // Tokens (app_token, user_token) are intentionally excluded. They are read directly
-        // from config (env vars or uploaded JSON) by AuthenticationValidator and never
-        // round-tripped through the view layer, so they don't appear here or in form POSTs.
-        return [
-            'internal_account_prefix'  => old('akahu_internal_account_prefix') ?? config('akahu.internal_account_prefix'),
-            'mortgage_payment_pattern' => old('akahu_mortgage_payment_pattern') ?? config('akahu.mortgage_payment_pattern'),
-        ];
+        // Tokens are read directly from config and never round-tripped through views.
+        return [];
     }
 }
