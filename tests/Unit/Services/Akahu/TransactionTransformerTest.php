@@ -14,13 +14,10 @@ use Tests\TestCase;
 
 class TransactionTransformerTest extends TestCase
 {
-    public function test_regular_internal_transfer_keeps_credit_side_only(): void
+    public function test_transfer_between_imported_accounts_keeps_credit_side_only(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                          => 'akahu',
-            'akahu_internal_account_prefix' => '12-3456',
-        ]);
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
         $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
         $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
         $debit         = Transaction::fromArray([
@@ -55,13 +52,10 @@ class TransactionTransformerTest extends TestCase
         $this->assertSame(10, $creditResult['destination_id']);
     }
 
-    public function test_internal_transfer_keeps_debit_side_when_opposing_account_is_not_imported(): void
+    public function test_transfer_without_imported_opposing_account_is_imported_as_regular_withdrawal(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                          => 'akahu',
-            'akahu_internal_account_prefix' => '12-3456',
-        ]);
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
         $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
         $transaction   = Transaction::fromArray([
             '_id'         => 'tx-debit-only',
@@ -75,7 +69,7 @@ class TransactionTransformerTest extends TestCase
 
         $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], [], [$account]);
 
-        $this->assertSame('transfer', $result['type']);
+        $this->assertSame('withdrawal', $result['type']);
         $this->assertSame('50.120000000000', $result['amount']);
         $this->assertSame(10, $result['source_id']);
         $this->assertSame('Cheque', $result['source_name']);
@@ -86,10 +80,7 @@ class TransactionTransformerTest extends TestCase
     public function test_non_transfer_with_internal_looking_account_number_is_not_classified_as_internal_transfer(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                          => 'akahu',
-            'akahu_internal_account_prefix' => '12-3456',
-        ]);
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
         $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
         $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
         $transaction   = Transaction::fromArray([
@@ -113,10 +104,7 @@ class TransactionTransformerTest extends TestCase
     public function test_incoming_internal_transfer_is_imported_as_transfer_with_internal_account_as_source_name(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                          => 'akahu',
-            'akahu_internal_account_prefix' => '12-3456',
-        ]);
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
         $account       = Account::fromArray([
             '_id'      => 'acc-1',
             'name'     => 'Main Account',
@@ -150,90 +138,10 @@ class TransactionTransformerTest extends TestCase
         $this->assertNull($result['category_name']);
     }
 
-    public function test_mortgage_transfer_keeps_debit_side_only(): void
-    {
-        $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                           => 'akahu',
-            'akahu_internal_account_prefix'  => '12-3456',
-            'akahu_mortgage_payment_pattern' => '^DUE \\d{4} (TO|FR) \\d{7}-\\d{2}$',
-        ]);
-        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
-        $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Mortgage', 'formatted_account' => '12-3456-1234567-00', 'currency' => 'NZD', 'status' => 'active']);
-        $transaction   = Transaction::fromArray([
-            '_id'         => 'mortgage-1',
-            '_account'    => 'acc-1',
-            'date'        => '2026-03-10T09:00:00Z',
-            'description' => 'DUE 2026 TO 1234567-00',
-            'amount'      => -1000,
-            'type'        => 'TRANSFER',
-            'meta'        => ['other_account' => '12-3456-1234567-00'],
-        ]);
-
-        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
-
-        $this->assertSame('withdrawal', $result['type']);
-        $this->assertSame('mortgage-1', $result['external_id']);
-        $this->assertSame(['TRANSFER'], $result['tags']);
-        $this->assertSame(10, $result['source_id']);
-        $this->assertSame(11, $result['destination_id']);
-        $this->assertSame('Mortgage', $result['destination_name']);
-    }
-
-    public function test_mortgage_transfer_resolves_loan_from_description_reference_suffix(): void
-    {
-        $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                           => 'akahu',
-            'akahu_internal_account_prefix'  => '02-1248',
-            'akahu_mortgage_payment_pattern' => '^DUE \\d{4} (TO|FR) \\d{7}-\\d{2}$',
-        ]);
-        $account       = Account::fromArray([
-            '_id'               => 'acc-main',
-            'name'              => 'Main Account',
-            'formatted_account' => '02-1248-0022275-02',
-            'currency'          => 'NZD',
-            'status'            => 'active',
-        ]);
-        $loan          = Account::fromArray([
-            '_id'               => 'acc-loan',
-            'name'              => 'Fixed Loan',
-            'formatted_account' => '02-1248-0022275-91',
-            'currency'          => 'NZD',
-            'status'            => 'active',
-        ]);
-        $transaction   = Transaction::fromArray([
-            '_id'         => 'mortgage-description-reference',
-            '_account'    => 'acc-main',
-            'date'        => '2026-04-24T09:00:00Z',
-            'description' => 'DUE 2404 TO 7960942-91',
-            'amount'      => -1450,
-            'type'        => 'TRANSFER',
-        ]);
-
-        $result = $transformer->transform(
-            $transaction,
-            $account,
-            $configuration,
-            ['acc-main' => 10, 'acc-loan' => 91],
-            [],
-            [$account, $loan]
-        );
-
-        $this->assertSame('withdrawal', $result['type']);
-        $this->assertSame(10, $result['source_id']);
-        $this->assertSame(91, $result['destination_id']);
-        $this->assertSame('Fixed Loan', $result['destination_name']);
-        $this->assertNull($result['category_name']);
-    }
-
     public function test_internal_transfer_resolves_account_numbers_when_suffix_width_differs(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray([
-            'flow'                          => 'akahu',
-            'akahu_internal_account_prefix' => '02-1248',
-        ]);
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
         $account       = Account::fromArray([
             '_id'               => 'acc-main',
             'name'              => 'Main',
