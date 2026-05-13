@@ -38,11 +38,6 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
             $errors->add('akahu_user_token', 'Akahu user token is required.');
         }
 
-        $mortgagePattern = $configuration->getAkahuMortgagePaymentPattern();
-        if ('' !== $mortgagePattern && false === @preg_match(sprintf('~%s~', str_replace('~', '\~', $mortgagePattern)), '')) {
-            $errors->add('akahu_mortgage_payment_pattern', sprintf('Mortgage payment pattern "%s" is not a valid regular expression.', $mortgagePattern));
-        }
-
         if ($errors->count() > 0) {
             return $errors;
         }
