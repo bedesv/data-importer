@@ -13,12 +13,15 @@ use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Log;
 use JsonException;
 use SensitiveParameter;
 
 class AkahuService
 {
+    private const int MAX_RATE_LIMIT_RETRIES = 2;
+
     private Configuration $configuration;
     private ClientInterface $client;
     /** @var null|callable */
@@ -83,11 +86,11 @@ class AkahuService
         $pollInterval = max(1, (int) config('akahu.refresh_poll_seconds', 10));
 
         while (CarbonImmutable::now()->lte($timeoutAt)) {
-            $this->pause($pollInterval);
             $accounts = $this->fetchAccounts();
             if (!$this->needsRefresh($accounts, $selectedAccountIds)) {
                 return $accounts;
             }
+            $this->pause($pollInterval);
         }
 
         throw new ImporterErrorException('Akahu account refresh did not complete within the configured timeout.');
@@ -177,13 +180,31 @@ class AkahuService
             throw new ImporterErrorException('Akahu credentials are incomplete.');
         }
 
-        try {
-            $response = $this->client->request($method, ltrim($path, '/'), [
-                'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
-                'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
-            ]);
-        } catch (GuzzleException $e) {
-            throw new ImporterErrorException(sprintf('Failed to connect to Akahu: %s', $e->getMessage()), 0, $e);
+        $rateLimitRetries = 0;
+        while (true) {
+            try {
+                $response = $this->client->request($method, ltrim($path, '/'), [
+                    'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
+                    'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
+                ]);
+                break;
+            } catch (RequestException $e) {
+                $response = $e->getResponse();
+                if (null === $response) {
+                    throw new ImporterErrorException('Failed to connect to Akahu.', 0, $e);
+                }
+
+                $this->logHttpFailure($method, $path, $response->getStatusCode(), (string) $response->getBody());
+                if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES) {
+                    ++$rateLimitRetries;
+                    $this->pause($this->retryAfterSeconds($response->getHeaderLine('Retry-After')));
+                    continue;
+                }
+
+                throw new ImporterErrorException(sprintf('Akahu API request failed with HTTP %d.', $response->getStatusCode()), 0, $e);
+            } catch (GuzzleException $e) {
+                throw new ImporterErrorException('Failed to connect to Akahu.', 0, $e);
+            }
         }
 
         $body = (string) $response->getBody();
@@ -237,6 +258,35 @@ class AkahuService
             'X-Akahu-ID'    => $appToken,
             'User-Agent'    => sprintf('FF3-data-importer/%s', config('importer.version')),
         ];
+    }
+
+    private function retryAfterSeconds(string $retryAfter): int
+    {
+        $retryAfter = trim($retryAfter);
+        if ('' === $retryAfter) {
+            return 1;
+        }
+        if (ctype_digit($retryAfter)) {
+            return max(1, min((int) $retryAfter, 60));
+        }
+
+        try {
+            $seconds = CarbonImmutable::parse($retryAfter)->diffInSeconds(CarbonImmutable::now(), false) * -1;
+
+            return max(1, min((int) $seconds, 60));
+        } catch (\Throwable) {
+            return 1;
+        }
+    }
+
+    private function logHttpFailure(string $method, string $path, int $statusCode, string $body): void
+    {
+        Log::warning('Akahu HTTP request failed.', [
+            'method' => $method,
+            'path'   => ltrim($path, '/'),
+            'status' => $statusCode,
+            'body'   => substr($body, 0, 1000),
+        ]);
     }
 
     private function pause(int $seconds): void

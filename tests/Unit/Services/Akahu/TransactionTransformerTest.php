@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Akahu;
 
+use App\Exceptions\ImporterErrorException;
 use App\Services\Akahu\Conversion\TransactionTransformer;
 use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\PendingTransaction;
@@ -52,6 +53,61 @@ class TransactionTransformerTest extends TestCase
         $this->assertSame(11, $creditResult['source_id']);
         $this->assertSame('Savings', $creditResult['source_name']);
         $this->assertSame(10, $creditResult['destination_id']);
+    }
+
+    public function test_internal_transfer_keeps_debit_side_when_opposing_account_is_not_imported(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray([
+            'flow'                          => 'akahu',
+            'akahu_internal_account_prefix' => '12-3456',
+        ]);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'tx-debit-only',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'TRANSFER TO 12-3456-9999999-00',
+            'amount'      => -50.12,
+            'type'        => 'TRANSFER',
+            'meta'        => ['other_account' => '12-3456-9999999-00'],
+        ]);
+
+        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], [], [$account]);
+
+        $this->assertSame('transfer', $result['type']);
+        $this->assertSame('50.120000000000', $result['amount']);
+        $this->assertSame(10, $result['source_id']);
+        $this->assertSame('Cheque', $result['source_name']);
+        $this->assertNull($result['destination_id']);
+        $this->assertSame('12-3456-9999999-00', $result['destination_name']);
+    }
+
+    public function test_non_transfer_with_internal_looking_account_number_is_not_classified_as_internal_transfer(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray([
+            'flow'                          => 'akahu',
+            'akahu_internal_account_prefix' => '12-3456',
+        ]);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'external-payment',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'Payment to external payee',
+            'amount'      => -50.12,
+            'type'        => 'AUTOMATIC_PAYMENT',
+            'meta'        => ['other_account' => '12-3456-9999999-00'],
+        ]);
+
+        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
+
+        $this->assertSame('withdrawal', $result['type']);
+        $this->assertSame(10, $result['source_id']);
+        $this->assertSame(11, $result['destination_id']);
+        $this->assertSame('Savings', $result['destination_name']);
     }
 
     public function test_incoming_internal_transfer_is_imported_as_transfer_with_internal_account_as_source_name(): void
@@ -249,5 +305,97 @@ class TransactionTransformerTest extends TestCase
         $this->assertSame($pendingA->getIdentifier(), $pendingB->getIdentifier());
         $this->assertSame($resultA['external_id'], $resultB['external_id']);
         $this->assertContains('pending', $resultA['tags']);
+    }
+
+    public function test_pending_transactions_preserve_provider_identifier_when_present(): void
+    {
+        $pending = PendingTransaction::fromArray([
+            '_id'         => 'provider-pending-id',
+            '_account'    => 'acc-1',
+            '_user'       => 'user-1',
+            '_connection' => 'conn-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'Coffee',
+            'amount'      => -5.50,
+            'type'        => 'EFTPOS',
+            'updated_at'  => '2026-03-10T09:00:00Z',
+        ]);
+
+        $this->assertSame('provider-pending-id', $pending->getIdentifier());
+        $this->assertSame('provider-pending-id', $pending->toArray()['hash']);
+    }
+
+    public function test_transform_preserves_decimal_amount_strings_without_float_rounding(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'large-decimal',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'Large decimal',
+            'amount'      => '-123456789012345.67',
+            'type'        => 'EFTPOS',
+        ]);
+
+        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], []);
+
+        $this->assertSame('withdrawal', $result['type']);
+        $this->assertSame('123456789012345.670000000000', $result['amount']);
+    }
+
+    public function test_transform_skips_zero_amount_transactions(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'zero-amount',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'Zero amount',
+            'amount'      => '0.00',
+            'type'        => 'EFTPOS',
+        ]);
+
+        $this->assertSame([], $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], []));
+    }
+
+    public function test_pending_synthetic_identifier_normalizes_amount_and_includes_stable_scope_fields(): void
+    {
+        $base = [
+            '_account'    => 'acc-1',
+            '_user'       => 'user-1',
+            '_connection' => 'conn-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'Coffee',
+            'type'        => 'EFTPOS',
+        ];
+
+        $this->assertSame(
+            PendingTransaction::syntheticIdentifier([...$base, 'amount' => -5.5]),
+            PendingTransaction::syntheticIdentifier([...$base, 'amount' => '-5.50'])
+        );
+        $this->assertNotSame(
+            PendingTransaction::syntheticIdentifier([...$base, 'amount' => -5.5]),
+            PendingTransaction::syntheticIdentifier([...$base, '_connection' => 'conn-2', 'amount' => -5.5])
+        );
+    }
+
+    public function test_transaction_date_requires_explicit_date(): void
+    {
+        $transaction = Transaction::fromArray([
+            '_id'         => 'missing-date',
+            '_account'    => 'acc-1',
+            'description' => 'Missing date',
+            'amount'      => '-1.23',
+            'type'        => 'EFTPOS',
+        ]);
+
+        $this->expectException(ImporterErrorException::class);
+        $this->expectExceptionMessage('Akahu transaction missing-date has no date.');
+
+        $transaction->getDate();
     }
 }
