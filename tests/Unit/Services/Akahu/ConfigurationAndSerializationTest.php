@@ -58,4 +58,21 @@ class ConfigurationAndSerializationTest extends TestCase
         $this->assertSame('acc-1', $accounts[0]->id);
         $this->assertSame('Test Bank', $accounts[0]->connectionName);
     }
+
+    public function test_akahu_account_serialization_preserves_raw_payload_for_counterpart_matching(): void
+    {
+        $original = Account::fromArray([
+            '_id'               => 'acc-1',
+            'name'              => 'Everyday',
+            'formatted_account' => '12-3456-1234567-00',
+            'account_number'    => '12-3456-1234567-00',
+            'meta'              => ['account_number' => '12-3456-1234567-00'],
+            'currency'          => 'NZD',
+        ]);
+
+        $restored = Account::fromArray($original->toArray());
+
+        $this->assertSame('12-3456-1234567-00', (string) ($restored->raw['account_number'] ?? ''));
+        $this->assertSame('12-3456-1234567-00', (string) ($restored->raw['meta']['account_number'] ?? ''));
+    }
 }

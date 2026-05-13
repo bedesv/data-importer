@@ -52,6 +52,7 @@ class Account
             'balance'                => $this->balance,
             'available_balance'      => $this->availableBalance,
             'refreshed_transactions' => $this->refreshedTransactions,
+            'raw'                    => $this->raw,
         ];
     }
 
