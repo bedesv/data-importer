@@ -23,12 +23,15 @@ class PendingTransaction extends Transaction
 
     public static function syntheticIdentifier(array $data): string
     {
+        $amount = number_format((float) ($data['amount'] ?? 0), 2, '.', '');
         $source = sprintf(
-            'pending-%s-%s-%s-%s',
+            'pending-%s-%s-%s-%s-%s-%s',
             (string) ($data['_account'] ?? ''),
+            (string) ($data['_user'] ?? ''),
+            (string) ($data['_connection'] ?? ''),
             (string) ($data['date'] ?? ''),
             (string) ($data['description'] ?? ''),
-            (string) ($data['amount'] ?? '')
+            $amount
         );
 
         return substr(hash('sha256', $source), 0, 24);
