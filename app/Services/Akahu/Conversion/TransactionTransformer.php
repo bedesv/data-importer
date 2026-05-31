@@ -14,7 +14,7 @@ final class TransactionTransformer
     public function transform(Transaction $transaction, Account $account, Configuration $configuration, array $accountMapping, array $newAccountConfig, array $serviceAccounts = []): array
     {
         $opposingAccount   = $this->findOpposingAccount($transaction, $serviceAccounts);
-        $isInternal        = $this->isInternalTransfer($transaction, $opposingAccount);
+        $isInternal        = $this->isInternalTransfer($transaction, $opposingAccount, $accountMapping);
 
         $rawAmount = $transaction->getAmount();
         if (0 === bccomp('0', $rawAmount, 12)) {
@@ -25,7 +25,7 @@ final class TransactionTransformer
         $isIncoming       = -1 === bccomp('0', $rawAmount, 12);
         $fireflyAccount    = $this->getMappedAccount($account, $accountMapping, $newAccountConfig);
         $opposingName      = $this->extractOpposingName($transaction);
-        $opposingFirefly   = null !== $opposingAccount ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
+        $opposingFirefly   = $isInternal ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
         $source            = $isIncoming ? $opposingFirefly : $fireflyAccount;
         $destination       = $isIncoming ? $fireflyAccount : $opposingFirefly;
 
@@ -68,9 +68,15 @@ final class TransactionTransformer
             ->format('Y-m-d');
     }
 
-    private function isInternalTransfer(Transaction $transaction, ?Account $opposingAccount): bool
+    private function isInternalTransfer(Transaction $transaction, ?Account $opposingAccount, array $accountMapping): bool
     {
-        return 'TRANSFER' === $transaction->getType() && null !== $opposingAccount;
+        $opposingAccountId = null === $opposingAccount ? null : $opposingAccount->getIdentifier();
+        $mappedId          = null === $opposingAccountId ? null : ($accountMapping[$opposingAccountId] ?? null);
+
+        return 'TRANSFER' === $transaction->getType()
+            && null !== $opposingAccount
+            && is_int($mappedId)
+            && $mappedId > 0;
     }
 
     private function extractOpposingName(Transaction $transaction): string
