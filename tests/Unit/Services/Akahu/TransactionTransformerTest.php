@@ -14,11 +14,11 @@ use Tests\TestCase;
 
 class TransactionTransformerTest extends TestCase
 {
-    public function test_transfer_between_imported_accounts_keeps_credit_side_only(): void
+    public function test_transfer_between_imported_accounts_imports_both_sides_as_transfers(): void
     {
         $transformer   = new TransactionTransformer();
         $configuration = Configuration::fromArray(['flow' => 'akahu']);
-        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'formatted_account' => '12-3456-1111111-00', 'currency' => 'NZD', 'status' => 'active']);
         $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
         $debit         = Transaction::fromArray([
             '_id'         => 'tx-debit',
@@ -32,24 +32,30 @@ class TransactionTransformerTest extends TestCase
         ]);
         $credit        = Transaction::fromArray([
             '_id'         => 'tx-credit',
-            '_account'    => 'acc-1',
+            '_account'    => 'acc-2',
             'date'        => '2026-03-10T09:00:00Z',
-            'description' => 'TRANSFER FROM 12-3456-9999999-00',
+            'description' => 'TRANSFER FROM 12-3456-1111111-00',
             'amount'      => 50.12,
             'type'        => 'TRANSFER',
-            'meta'        => ['other_account' => '12-3456-9999999-00'],
+            'meta'        => ['other_account' => '12-3456-1111111-00'],
             'category'    => ['name' => 'Transfers'],
         ]);
 
         $debitResult  = $transformer->transform($debit, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
-        $creditResult = $transformer->transform($credit, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
+        $creditResult = $transformer->transform($credit, $opposing, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
 
-        $this->assertSame([], $debitResult);
+        $this->assertSame('transfer', $debitResult['type']);
+        $this->assertNull($debitResult['category_name']);
+        $this->assertSame(10, $debitResult['source_id']);
+        $this->assertSame('Cheque', $debitResult['source_name']);
+        $this->assertSame(11, $debitResult['destination_id']);
+        $this->assertSame('Savings', $debitResult['destination_name']);
         $this->assertSame('transfer', $creditResult['type']);
         $this->assertNull($creditResult['category_name']);
-        $this->assertSame(11, $creditResult['source_id']);
-        $this->assertSame('Savings', $creditResult['source_name']);
-        $this->assertSame(10, $creditResult['destination_id']);
+        $this->assertSame(10, $creditResult['source_id']);
+        $this->assertSame('Cheque', $creditResult['source_name']);
+        $this->assertSame(11, $creditResult['destination_id']);
+        $this->assertSame('Savings', $creditResult['destination_name']);
     }
 
     public function test_transfer_without_imported_opposing_account_is_imported_as_regular_withdrawal(): void
@@ -97,8 +103,57 @@ class TransactionTransformerTest extends TestCase
 
         $this->assertSame('withdrawal', $result['type']);
         $this->assertSame(10, $result['source_id']);
-        $this->assertSame(11, $result['destination_id']);
-        $this->assertSame('Savings', $result['destination_name']);
+        $this->assertNull($result['destination_id']);
+        $this->assertSame('12-3456-9999999-00', $result['destination_name']);
+    }
+
+    public function test_transfer_to_unselected_akahu_account_is_imported_as_regular_withdrawal(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'tx-unselected-transfer',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'TRANSFER TO 12-3456-9999999-00',
+            'amount'      => -50.12,
+            'type'        => 'TRANSFER',
+            'meta'        => ['other_account' => '12-3456-9999999-00'],
+        ]);
+
+        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], [], [$account, $opposing]);
+
+        $this->assertSame('withdrawal', $result['type']);
+        $this->assertSame(10, $result['source_id']);
+        $this->assertSame('Cheque', $result['source_name']);
+        $this->assertNull($result['destination_id']);
+        $this->assertSame('12-3456-9999999-00', $result['destination_name']);
+    }
+
+    public function test_transfer_to_selected_account_without_firefly_id_is_imported_as_regular_withdrawal(): void
+    {
+        $transformer   = new TransactionTransformer();
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
+        $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
+        $transaction   = Transaction::fromArray([
+            '_id'         => 'tx-create-new-transfer',
+            '_account'    => 'acc-1',
+            'date'        => '2026-03-10T09:00:00Z',
+            'description' => 'TRANSFER TO 12-3456-9999999-00',
+            'amount'      => -50.12,
+            'type'        => 'TRANSFER',
+            'meta'        => ['other_account' => '12-3456-9999999-00'],
+        ]);
+
+        $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10, 'acc-2' => 0], [], [$account, $opposing]);
+
+        $this->assertSame('withdrawal', $result['type']);
+        $this->assertSame(10, $result['source_id']);
+        $this->assertNull($result['destination_id']);
+        $this->assertSame('12-3456-9999999-00', $result['destination_name']);
     }
 
     public function test_incoming_internal_transfer_is_imported_as_transfer_with_internal_account_as_source_name(): void

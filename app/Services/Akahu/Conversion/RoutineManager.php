@@ -57,11 +57,17 @@ final class RoutineManager implements RoutineManagerInterface
             $this->repository->saveToDisk($this->importJob);
         }
 
-        $transactionGroups            = [];
         foreach ($accountMapping as $serviceAccountId => $applicationAccountId) {
             if (0 === $applicationAccountId) {
                 $this->createNewAccount($serviceAccountId);
             }
+        }
+
+        $configuration                 = $this->importJob->getConfiguration();
+        $accountMapping                = $configuration->getAccounts();
+
+        $transactionGroups            = [];
+        foreach ($accountMapping as $serviceAccountId => $applicationAccountId) {
             $account = $this->findAccount($serviceAccountId);
             if (!$account instanceof Account) {
                 Log::warning(sprintf('Cannot find Akahu account "%s" in import job.', $serviceAccountId));
