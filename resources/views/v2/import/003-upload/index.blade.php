@@ -46,6 +46,11 @@
                             Simply check the "Use demo mode" option below.
                         </p>
                         @endif
+                        @if('akahu' === $flow)
+                        <p>
+                            Akahu credentials and matching rules are managed through the importer environment.
+                        </p>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -64,6 +69,9 @@
                             <!-- SimpleFIN options -->
                             @if('simplefin' === $flow)
                                 @include('import.003-upload.partials.simplefin')
+                            @endif
+                            @if('akahu' === $flow)
+                                @include('import.003-upload.partials.akahu')
                             @endif
 
                             <!-- Importable FILE -->

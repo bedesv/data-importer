@@ -25,6 +25,7 @@ declare(strict_types=1);
 namespace App\Api\Controllers\ImportFlow;
 
 use App\Api\Controllers\Controller;
+use App\Services\Akahu\AuthenticationValidator as AkahuValidator;
 use App\Services\EnableBanking\AuthenticationValidator as EnableBankingValidator;
 use App\Services\Enums\AuthenticationStatus;
 use App\Services\LunchFlow\AuthenticationValidator as LunchFlowValidator;
@@ -41,6 +42,7 @@ final class ValidationController extends Controller
         return match ($flow) {
             'nordigen', 'gocardless' => $this->validateGoCardless(),
             'simplefin'              => $this->validateSimpleFIN(),
+            'akahu'                  => $this->validateAkahu(),
             'lunchflow'              => $this->validateLunchFlow(),
             'sophtron'               => $this->validateSophtron(),
             'eb'                     => $this->validateEnableBanking(),
@@ -77,6 +79,21 @@ final class ValidationController extends Controller
         }
         if (AuthenticationStatus::NODATA === $result) {
             // send user error:
+            return response()->json(['result' => 'NODATA']);
+        }
+
+        return response()->json(['result' => 'OK']);
+    }
+
+    public function validateAkahu(): JsonResponse
+    {
+        $validator = new AkahuValidator();
+        $result    = $validator->validate();
+
+        if (AuthenticationStatus::ERROR === $result) {
+            return response()->json(['result' => 'NOK']);
+        }
+        if (AuthenticationStatus::NODATA === $result) {
             return response()->json(['result' => 'NODATA']);
         }
 

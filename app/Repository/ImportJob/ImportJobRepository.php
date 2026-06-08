@@ -26,6 +26,7 @@ namespace App\Repository\ImportJob;
 
 use App\Exceptions\ImporterErrorException;
 use App\Models\ImportJob;
+use App\Services\Akahu\Validation\NewJobDataCollector as AkahuNewJobDataCollector;
 use App\Services\CSV\Mapper\TransactionCurrencies;
 use App\Services\EnableBanking\Validation\NewJobDataCollector as EnableBankingNewJobDataCollector;
 use App\Services\LunchFlow\Validation\NewJobDataCollector as LunchFlowNewJobDataCollector;
@@ -189,6 +190,15 @@ final class ImportJobRepository
                 $validator->setImportJob($importJob);
                 $messageBag    = $validator->collectAccounts();
                 // get import job + configuration back:
+                $importJob     = $validator->getImportJob();
+                $configuration = $importJob->getConfiguration();
+
+                break;
+
+            case 'akahu':
+                $validator     = new AkahuNewJobDataCollector();
+                $validator->setImportJob($importJob);
+                $messageBag    = $validator->collectAccounts();
                 $importJob     = $validator->getImportJob();
                 $configuration = $importJob->getConfiguration();
 

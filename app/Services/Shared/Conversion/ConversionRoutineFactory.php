@@ -25,6 +25,7 @@ declare(strict_types=1);
 namespace App\Services\Shared\Conversion;
 
 use App\Exceptions\ImporterErrorException;
+use App\Services\Akahu\Conversion\RoutineManager as AkahuRoutineManager;
 use App\Models\ImportJob;
 use App\Services\Camt\Conversion\RoutineManager as CamtRoutineManager;
 use App\Services\CSV\Conversion\RoutineManager as CSVRoutineManager;
@@ -78,6 +79,9 @@ final class ConversionRoutineFactory
         }
         if ('simplefin' === $flow) {
             return new SimpleFINRoutineManager($this->importJob);
+        }
+        if ('akahu' === $flow) {
+            return new AkahuRoutineManager($this->importJob);
         }
         if ('lunchflow' === $flow) {
             return new LunchFlowRoutineManager($this->importJob);

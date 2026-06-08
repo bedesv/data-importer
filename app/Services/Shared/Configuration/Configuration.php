@@ -85,6 +85,8 @@ final class Configuration
     // simplefin configuration
     private bool $pendingTransactions;
     private string $accessToken;
+    private string $akahuAppToken;
+    private string $akahuUserToken;
 
     // date range settings
     private array $mapping                = [];
@@ -169,6 +171,8 @@ final class Configuration
         // simplefin configuration
         $this->pendingTransactions         = true;
         $this->accessToken                 = '';
+        $this->akahuAppToken               = '';
+        $this->akahuUserToken              = '';
 
         // double transaction detection:
         $this->duplicateDetectionMethod    = 'classic';
@@ -470,6 +474,8 @@ final class Configuration
         // simplefin configuration
         $object->pendingTransactions         = $array['pending_transactions'] ?? true;
         $object->accessToken                 = $array['access_token'] ?? '';
+        $object->akahuAppToken               = $array['akahu_app_token'] ?? '';
+        $object->akahuUserToken              = $array['akahu_user_token'] ?? '';
 
         if ('csv' === $object->flow) {
             $object->flow        = 'file';
@@ -584,6 +590,8 @@ final class Configuration
         // simplefin configuration
         $object->pendingTransactions         = $array['pending_transactions'] ?? true;
         $object->accessToken                 = $array['access_token'] ?? '';
+        $object->akahuAppToken               = $array['akahu_app_token'] ?? '';
+        $object->akahuUserToken              = $array['akahu_user_token'] ?? '';
 
         // flow
         $object->flow                        = $array['flow'] ?? 'file';
@@ -1056,6 +1064,10 @@ final class Configuration
             'pending_transactions'         => $this->pendingTransactions,
             'access_token'                 => $this->accessToken,
 
+            // akahu configuration
+            'akahu_app_token'               => $this->akahuAppToken,
+            'akahu_user_token'              => $this->akahuUserToken,
+
             // settings for spectre + nordigen
             'accounts'                     => $this->accounts,
             'new_accounts'                 => $this->newAccounts,
@@ -1192,6 +1204,26 @@ final class Configuration
     public function setAccessToken(#[SensitiveParameter] string $accessToken): void
     {
         $this->accessToken = $accessToken;
+    }
+
+    public function getAkahuAppToken(): string
+    {
+        return $this->akahuAppToken;
+    }
+
+    public function setAkahuAppToken(#[SensitiveParameter] string $akahuAppToken): void
+    {
+        $this->akahuAppToken = $akahuAppToken;
+    }
+
+    public function getAkahuUserToken(): string
+    {
+        return $this->akahuUserToken;
+    }
+
+    public function setAkahuUserToken(#[SensitiveParameter] string $akahuUserToken): void
+    {
+        $this->akahuUserToken = $akahuUserToken;
     }
 
     public function getDateRangeNotAfterNumber(): int

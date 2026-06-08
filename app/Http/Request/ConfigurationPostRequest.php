@@ -249,12 +249,15 @@ final class ConfigurationPostRequest extends Request
         if ('simplefin' === $flow) {
             return implode(',', array_keys(config('simplefin.unique_column_options')));
         }
+        if ('akahu' === $flow) {
+            return implode(',', array_keys(config('akahu.unique_column_options')));
+        }
 
         return implode(',', array_keys(config('file.unique_column_options')));
     }
 
     private function getDefaultAccountRule(string $flow): string
     {
-        return 'simplefin' === $flow ? 'nullable|numeric|min:1|max:100000' : 'required|numeric|min:1|max:100000';
+        return in_array($flow, ['simplefin', 'akahu'], true) ? 'nullable|numeric|min:1|max:100000' : 'required|numeric|min:1|max:100000';
     }
 }

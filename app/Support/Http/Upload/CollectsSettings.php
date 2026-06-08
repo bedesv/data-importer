@@ -30,4 +30,10 @@ trait CollectsSettings
     {
         return ['token' => old('simplefin_token') ?? config('simplefin.token')];
     }
+
+    protected function getAkahuSettings(): array
+    {
+        // Tokens are read directly from config and never round-tripped through views.
+        return [];
+    }
 }
