@@ -7,7 +7,8 @@ name: Build and publish Docker images
 on:
   push:
     branches:
-      - main
+      - dev
+      - ci/ghcr-docker-publish
   workflow_dispatch:
 
 concurrency:
