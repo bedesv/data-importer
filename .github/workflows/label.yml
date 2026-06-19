@@ -1,7 +1,8 @@
 name: "Issues - Label issues to transfer"
 on:
-  issues:
-    types: [opened, edited]
+  workflow_dispatch:
+#   issues:
+#     types: [opened, edited]
 
 permissions:
   issues: write
