@@ -1,0 +1,34 @@
+name: Sync main with upstream
+
+# Keeps this fork's main branch up to date with the upstream
+# firefly-iii/data-importer main branch. Uses GitHub's native fork
+# "merge-upstream" API, which fast-forwards main when there are no
+# local commits ahead of upstream. Runs on a daily schedule and can
+# also be triggered manually.
+
+on:
+  schedule:
+    # Daily at 06:00 UTC. Adjust the cron expression to change the cadence.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge upstream into main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/merge-upstream" \
+            -f branch=main
