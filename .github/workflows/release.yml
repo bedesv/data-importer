@@ -11,8 +11,8 @@ on:
         description: 'PHP version'
         required: true
         default: '8.5'
-  schedule:
-    - cron: '0 3 * * TUE'
+  # schedule:
+  #   - cron: '0 3 * * TUE'
 
 jobs:
   build:
