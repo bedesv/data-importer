@@ -61,7 +61,7 @@ jobs:
             latest=false
             suffix=${{ matrix.suffix }},onlatest=true
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dev' }}
             type=sha,format=short
             type=ref,event=branch
 
