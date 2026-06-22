@@ -36,19 +36,26 @@ applies cleanly to every file **except** the two also touched by `f59a9eb`
 
 For a transaction of type `TRANSFER`, `TransactionTransformer::transform()`:
 
-1. **Detect candidate (union).** It is an internal-transfer candidate when *either*:
-   - a configured `internal_account_prefix` matches the opposing account number or
-     appears in the description, **or**
-   - an opposing account is found in the import set (`findOpposingAccount`).
+1. **Detect candidate.** It is an internal-transfer candidate when an opposing account
+   is found in the import set (`findOpposingAccount`). A mortgage payment is detected
+   separately by the configured `mortgage_payment_pattern` regex; when no opposing
+   account is found via the normal path, `findMortgageAccount` attempts to match the
+   liability account by reference.
 
-   A mortgage payment is detected separately by the configured
-   `mortgage_payment_pattern` regex; when no opposing account is found via the normal
-   path, `findMortgageAccount` attempts to match the liability account by reference.
+   > **Note on the prefix:** the `internal_account_prefix` config field is restored
+   > across the stack (serialization, env, schema, credentials, view) for
+   > compatibility, but it is **not** wired into classification. The prefix only ever
+   > influenced *detection*, never *which account is the counterparty*; combined with
+   > the universal Firefly-id guard below (which requires a resolved + mapped opposing
+   > account), a prefix branch could never change an outcome. So we deliberately omit
+   > it from `isInternalTransfer` rather than ship a dead branch. (Decision recorded
+   > during planning.)
 
 2. **Universal Firefly-id guard.** A detected candidate (internal *or* mortgage) only
    keeps its special classification when its opposing account resolves to a real
-   Firefly III id (`is_int($mapped) && $mapped > 0`) in `accountMapping`. Otherwise it
-   falls back to a plain `deposit`/`withdrawal` with a name-only counterparty
+   Firefly III id (`is_int($mapped) && $mapped > 0`) in `accountMapping`, keyed by
+   `$opposingAccount->getIdentifier()`. Otherwise it falls back to a plain
+   `deposit`/`withdrawal` with a name-only counterparty
    (`['id' => null, 'name' => <opposing name>]`).
 
 3. **Type.**
@@ -90,32 +97,44 @@ Reverting `8b4acdd` restores these across the stack:
    and leaves merge conflicts in `TransactionTransformer.php` and
    `TransactionTransformerTest.php`.
 3. **Do not modify `RoutineManager.php`** — `f59a9eb`'s ordering stays.
-4. Resolve `TransactionTransformer.php` by hand to implement the target behavior:
+   Resolve the two conflicting files (`TransactionTransformer.php`,
+   `TransactionTransformerTest.php`) by keeping the HEAD/`f59a9eb` version for now
+   (`git checkout HEAD -- <those two files>`), so the merge logic and tests are applied
+   deliberately in the next task rather than via conflict-marker surgery.
+4. Overwrite `TransactionTransformer.php` with the merged implementation:
    - Restore helpers `isMortgagePayment`, `findMortgageAccount`,
      `extractMortgageAccountReference`, `accountSuffix`, and the `Log` import.
-   - Extend `isInternalTransfer` to the union (prefix/mortgage **or** opposing account
-     found), taking both `Configuration` and the found `?Account`.
-   - Add a shared guard helper (e.g. `opposingHasFireflyId(?Account, array $accountMapping)`)
-     and gate both `$isInternal` and `$isMortgagePayment` through it.
+   - `isInternalTransfer(Transaction, ?Account $opposing, bool $isMortgage)`: TRANSFER
+     type AND (`$isMortgage` OR opposing account found). No `Configuration`/prefix.
+   - Add `opposingHasFireflyId(?Account, array $accountMapping)` and gate both
+     `$isInternal` and `$isMortgagePayment` through it.
    - Restore the wrong-side skip block.
-   - Set `opposingFirefly` to the mapped account only when classified special.
-5. Resolve `TransactionTransformerTest.php` and reconcile the wider test suite
-   (see below).
+   - Set `opposingFirefly` to the mapped account only when `$isInternal`.
+5. Update `TransactionTransformerTest.php` (see below).
 
 ## Test reconciliation
 
-- **Keep** from `f59a9eb`:
-  - `RoutineManagerTest::test_routine_manager_creates_all_new_accounts_before_transforming_internal_transfers`
-  - `TransactionTransformerTest::test_transfer_to_unselected_akahu_account_is_imported_as_regular_withdrawal`
-  - `TransactionTransformerTest::test_transfer_to_selected_account_without_firefly_id_is_imported_as_regular_withdrawal`
-  (both consistent with the universal guard)
-- **Revert** `test_transfer_between_imported_accounts_imports_both_sides_as_transfers`
-  back to the keep-credit-side-only assertion (wrong-side skip restored).
-- **Restore** the mortgage/prefix unit and feature tests deleted by `8b4acdd`
-  (in `TransactionTransformerTest`, `ExistingConfigurationTest`, `AkahuServiceTest`,
-  `ConfigurationAndSerializationTest`, `NewJobDataCollectorTest`).
-- **Add** coverage for the new union + guard interaction: a prefix-matched transfer
-  whose opposing account has no Firefly id falls back to a plain withdrawal.
+- **Keep unchanged** the HEAD `TransactionTransformerTest` cases — they all already
+  match the merged behavior: `..._without_imported_opposing_account...`,
+  `..._non_transfer_with_internal_looking_account_number...`,
+  `..._unselected_akahu_account...`, `..._without_firefly_id...`,
+  `..._incoming_internal_transfer...`, `..._suffix_width_differs...`, and the
+  pending/zero/decimal/date cases. Also keep `f59a9eb`'s `RoutineManagerTest`.
+- **Change** `test_transfer_between_imported_accounts_imports_both_sides_as_transfers`
+  to the keep-credit-side-only assertion (debit leg returns `[]`; credit leg is the
+  kept `transfer`), reflecting the restored wrong-side skip. Rename accordingly.
+- **Restore** only the two mortgage unit tests deleted by `8b4acdd`:
+  `test_mortgage_transfer_keeps_debit_side_only` and
+  `test_mortgage_transfer_resolves_loan_from_description_reference_suffix`. (The old
+  prefix-only tests are **not** restored — the HEAD cases already cover the same
+  scenarios and the prefix no longer affects classification.)
+- **Add** `test_mortgage_payment_without_mapped_account_falls_back_to_withdrawal`:
+  mortgage regex matches but the resolved loan account has no Firefly id → plain
+  withdrawal (guard applies to mortgage too).
+- The config/serialization/validator tests restored by reverting `8b4acdd`
+  (`ConfigurationAndSerializationTest`, `NewJobDataCollectorTest`,
+  `ExistingConfigurationTest`, `AkahuServiceTest`) come back via the clean revert and
+  pass once `Configuration`/`Credentials`/validator are restored.
 - Verify: `./vendor/bin/phpunit --filter Akahu`.
 
 ## Out of scope
