@@ -22,6 +22,11 @@ on:
     # Daily at 06:00 UTC. Adjust the cron expression to change the cadence.
     - cron: "0 6 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebase dev and open a PR even if main did not move"
+        type: boolean
+        default: false
 
 concurrency:
   group: sync-upstream
@@ -62,7 +67,7 @@ jobs:
 
       - name: Rebase dev onto updated main
         id: rebase
-        if: steps.sync.outputs.changed == 'true'
+        if: steps.sync.outputs.changed == 'true' || inputs.force
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -88,8 +93,17 @@ jobs:
 
           git push --force origin "${branch}"
 
+          # A forced run with no upstream delta can leave the branch identical
+          # to dev (nothing to replay), which would make an empty PR. Detect it.
+          if [ "$(git rev-list --count origin/dev..HEAD)" = "0" ]; then
+            echo "Branch has no commits beyond dev; nothing to open a PR for."
+            echo "hasdiff=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "hasdiff=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Open pull request into dev
-        if: steps.sync.outputs.changed == 'true'
+        if: (steps.sync.outputs.changed == 'true' || inputs.force) && steps.rebase.outputs.hasdiff == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
