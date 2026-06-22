@@ -177,6 +177,12 @@
         "akahu_user_token": {
             "type": "string"
         },
+        "akahu_internal_account_prefix": {
+            "type": "string"
+        },
+        "akahu_mortgage_payment_pattern": {
+            "type": "string"
+        },
         "conversion": {
             "type": "boolean"
         }

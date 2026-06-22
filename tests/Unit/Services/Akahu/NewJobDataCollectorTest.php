@@ -24,22 +24,28 @@ class NewJobDataCollectorTest extends TestCase
     {
         config()->set('akahu.app_token', 'env-app');
         config()->set('akahu.user_token', 'env-user');
+        config()->set('akahu.internal_account_prefix', 'env-prefix');
+        config()->set('akahu.mortgage_payment_pattern', 'env-pattern');
 
         $service = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')
             ->once()
             ->with(Mockery::on(function (Configuration $configuration): bool {
                 return 'env-app' === $configuration->getAkahuAppToken()
-                    && 'env-user' === $configuration->getAkahuUserToken();
+                    && 'env-user' === $configuration->getAkahuUserToken()
+                    && 'env-prefix' === $configuration->getAkahuInternalAccountPrefix()
+                    && 'env-pattern' === $configuration->getAkahuMortgagePaymentPattern();
             }));
         $service->shouldReceive('validateCredentials')->once()->andReturn([]);
         app()->instance(AkahuService::class, $service);
 
         $job           = ImportJob::createNew();
         $configuration = Configuration::fromArray([
-            'flow'             => 'akahu',
-            'akahu_app_token'  => 'config-app',
-            'akahu_user_token' => 'config-user',
+            'flow'                           => 'akahu',
+            'akahu_app_token'                => 'config-app',
+            'akahu_user_token'               => 'config-user',
+            'akahu_internal_account_prefix'  => 'config-prefix',
+            'akahu_mortgage_payment_pattern' => 'config-pattern',
         ]);
         $job->setFlow('akahu');
         $job->setConfiguration($configuration);
@@ -47,8 +53,10 @@ class NewJobDataCollectorTest extends TestCase
         $collector        = new NewJobDataCollector();
         $collector->setImportJob($job);
         $collector->input = [
-            'akahu_app_token'  => 'form-app',
-            'akahu_user_token' => 'form-user',
+            'akahu_app_token'                => 'form-app',
+            'akahu_user_token'               => 'form-user',
+            'akahu_internal_account_prefix'  => '12-3456',
+            'akahu_mortgage_payment_pattern' => '^DUE',
         ];
 
         $errors = $collector->validate();
