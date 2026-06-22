@@ -11,7 +11,8 @@
 ## Global Constraints
 
 - Branch: all work on `revert/akahu-mortgage-internal` (already created off `dev`).
-- Do **not** modify `app/Services/Akahu/Conversion/RoutineManager.php` or `tests/Unit/Services/Akahu/RoutineManagerTest.php` — `f59a9eb`'s ordering stays.
+- Do **not** modify `app/Services/Akahu/Conversion/RoutineManager.php` — `f59a9eb`'s account-creation ordering stays as production code.
+- `tests/Unit/Services/Akahu/RoutineManagerTest.php` gets a **minimal** update (decision recorded during execution): the restored wrong-side skip drops the debit leg of an internal transfer, so the ordering test must model **both** legs (debit on acc-1 skipped, credit on acc-2 kept). The kept credit leg still asserts the surviving `transfer` resolves to the created Firefly ids (source 21 → dest 22), preserving the test's purpose of proving accounts are created before transforming. Accepted consequence: an internal transfer Akahu reports on only one account (debit side) is dropped (original pre-`8b4acdd` behaviour).
 - The prefix (`internal_account_prefix`) is restored as config surface only; it is **not** wired into transfer classification.
 - The Firefly-id guard applies to **all** special classification, including mortgage payments: special type only when the opposing account maps to `is_int($id) && $id > 0`, keyed by `$opposingAccount->getIdentifier()`.
 - Account model: `getIdentifier()` returns `$this->id`, so `$accountMapping[$opposing->getIdentifier()]` is the same key `getMappedAccount` uses.

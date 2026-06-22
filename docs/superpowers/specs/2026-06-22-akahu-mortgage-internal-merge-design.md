@@ -114,6 +114,13 @@ Reverting `8b4acdd` restores these across the stack:
 
 ## Test reconciliation
 
+- **Update** `RoutineManagerTest::test_routine_manager_creates_all_new_accounts_before_transforming_internal_transfers`
+  (decision recorded during execution): the restored wrong-side skip drops the debit
+  leg, so the test must supply the credit leg on acc-2 (the surviving side). It still
+  asserts the resulting `transfer` resolves to the created ids (source 21 → dest 22),
+  preserving its purpose of validating `f59a9eb`'s account-creation ordering. Accepted
+  consequence: a one-leg-only (debit) internal transfer is dropped, matching the
+  original pre-`8b4acdd` behaviour. `RoutineManager.php` itself is unchanged.
 - **Keep unchanged** the HEAD `TransactionTransformerTest` cases — they all already
   match the merged behavior: `..._without_imported_opposing_account...`,
   `..._non_transfer_with_internal_looking_account_number...`,
