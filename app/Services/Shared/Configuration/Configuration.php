@@ -87,6 +87,8 @@ final class Configuration
     private string $accessToken;
     private string $akahuAppToken;
     private string $akahuUserToken;
+    private string $akahuInternalAccountPrefix;
+    private string $akahuMortgagePaymentPattern;
 
     // date range settings
     private array $mapping                = [];
@@ -173,6 +175,8 @@ final class Configuration
         $this->accessToken                 = '';
         $this->akahuAppToken               = '';
         $this->akahuUserToken              = '';
+        $this->akahuInternalAccountPrefix  = '';
+        $this->akahuMortgagePaymentPattern = '';
 
         // double transaction detection:
         $this->duplicateDetectionMethod    = 'classic';
@@ -476,6 +480,8 @@ final class Configuration
         $object->accessToken                 = $array['access_token'] ?? '';
         $object->akahuAppToken               = $array['akahu_app_token'] ?? '';
         $object->akahuUserToken              = $array['akahu_user_token'] ?? '';
+        $object->akahuInternalAccountPrefix  = $array['akahu_internal_account_prefix'] ?? '';
+        $object->akahuMortgagePaymentPattern = $array['akahu_mortgage_payment_pattern'] ?? '';
 
         if ('csv' === $object->flow) {
             $object->flow        = 'file';
@@ -592,6 +598,8 @@ final class Configuration
         $object->accessToken                 = $array['access_token'] ?? '';
         $object->akahuAppToken               = $array['akahu_app_token'] ?? '';
         $object->akahuUserToken              = $array['akahu_user_token'] ?? '';
+        $object->akahuInternalAccountPrefix  = $array['akahu_internal_account_prefix'] ?? '';
+        $object->akahuMortgagePaymentPattern = $array['akahu_mortgage_payment_pattern'] ?? '';
 
         // flow
         $object->flow                        = $array['flow'] ?? 'file';
@@ -1067,6 +1075,8 @@ final class Configuration
             // akahu configuration
             'akahu_app_token'               => $this->akahuAppToken,
             'akahu_user_token'              => $this->akahuUserToken,
+            'akahu_internal_account_prefix' => $this->akahuInternalAccountPrefix,
+            'akahu_mortgage_payment_pattern' => $this->akahuMortgagePaymentPattern,
 
             // settings for spectre + nordigen
             'accounts'                     => $this->accounts,
@@ -1226,6 +1236,26 @@ final class Configuration
         $this->akahuUserToken = $akahuUserToken;
     }
 
+    public function getAkahuInternalAccountPrefix(): string
+    {
+        return $this->akahuInternalAccountPrefix;
+    }
+
+    public function setAkahuInternalAccountPrefix(string $akahuInternalAccountPrefix): void
+    {
+        $this->akahuInternalAccountPrefix = $akahuInternalAccountPrefix;
+    }
+
+    public function getAkahuMortgagePaymentPattern(): string
+    {
+        return $this->akahuMortgagePaymentPattern;
+    }
+
+    public function setAkahuMortgagePaymentPattern(string $akahuMortgagePaymentPattern): void
+    {
+        $this->akahuMortgagePaymentPattern = $akahuMortgagePaymentPattern;
+    }
+
     public function getDateRangeNotAfterNumber(): int
     {
         return $this->dateRangeNotAfterNumber;
@@ -1266,6 +1296,8 @@ final class Configuration
         $this->pendingTransactions         = $request['pending_transactions'];
         $this->customTag                   = $request['custom_tag'];
         $this->duplicateDetectionMethod    = $request['duplicate_detection_method'];
+        $this->akahuInternalAccountPrefix  = $request['akahu_internal_account_prefix'] ?? $this->akahuInternalAccountPrefix;
+        $this->akahuMortgagePaymentPattern = $request['akahu_mortgage_payment_pattern'] ?? $this->akahuMortgagePaymentPattern;
         $this->ignoreSpectreCategories     = $request['ignore_spectre_categories'];
         $this->mapAllData                  = $request['map_all_data'];
         $this->dateRange                   = $request['date_range'];
