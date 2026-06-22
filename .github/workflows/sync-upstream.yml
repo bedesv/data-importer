@@ -114,7 +114,7 @@ jobs:
             body=$'Automated upstream sync.\n\n**The automatic rebase of `dev` onto the updated `main` hit conflicts and was aborted.** This branch currently points at the freshly-synced `main`, so this PR contains the upstream delta but **not** your `dev` commits replayed on top.\n\nTo resolve, rebase locally and force-push to this branch:\n\n```sh\ngit fetch origin\ngit checkout -B '"${branch}"' origin/dev\ngit rebase origin/main   # resolve conflicts\ngit push --force origin '"${branch}"'\n```'
           else
             title="Sync dev with upstream — ${branch}"
-            body=$'Automated upstream sync.\n\n`dev` has been rebased onto the latest upstream `main` (synced from firefly-iii/data-importer). Review and merge to bring the upstream changes into `dev`.'
+            body=$'Automated upstream sync.\n\n`dev` has been rebased onto the latest upstream `main` (synced from firefly-iii/data-importer).\n\n## How to merge (keep linear history)\n\nThis branch is `dev` **rewritten** — your commits replayed on top of the new `main`. The merge buttons cannot reproduce that shape: a merge commit duplicates your commits, squash loses history, and rebase-merge inverts the ordering. Review the diff here, then adopt the branch by resetting `dev` to it:\n\n```sh\ngit fetch origin\ngit checkout dev\ngit reset --hard origin/'"${branch}"$'\ngit push --force-with-lease origin dev\n```\n\nGitHub auto-closes this PR once `dev` points at the branch tip (shown as Closed, not Merged).'
           fi
 
           existing="$(gh pr list --head "${branch}" --base dev --state open --json number --jq 'length')"
