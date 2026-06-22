@@ -146,7 +146,17 @@ class RoutineManagerTest extends TestCase
                 'meta'        => ['other_account' => '12-3456-9999999-00'],
             ]),
         ]);
-        $service->shouldReceive('fetchTransactions')->once()->with('acc-2')->andReturn([]);
+        $service->shouldReceive('fetchTransactions')->once()->with('acc-2')->andReturn([
+            Transaction::fromArray([
+                '_id'         => 'tx-transfer-credit',
+                '_account'    => 'acc-2',
+                'date'        => '2026-03-10T09:00:00Z',
+                'description' => 'TRANSFER FROM 12-3456-1111111-00',
+                'amount'      => 50.12,
+                'type'        => 'TRANSFER',
+                'meta'        => ['other_account' => '12-3456-1111111-00'],
+            ]),
+        ]);
         $service->shouldReceive('fetchPendingTransactions')->never();
         app()->instance(AkahuService::class, $service);
 

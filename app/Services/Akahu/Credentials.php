@@ -14,6 +14,8 @@ class Credentials
         public readonly string $appToken,
         #[SensitiveParameter]
         public readonly string $userToken,
+        public readonly string $internalAccountPrefix,
+        public readonly string $mortgagePaymentPattern,
     ) {}
 
     public static function resolve(Configuration $configuration, array $input = []): self
@@ -28,13 +30,26 @@ class Credentials
             $input['akahu_user_token'] ?? '',
             $configuration->getAkahuUserToken(),
         );
-        return new self($appToken, $userToken);
+        $internalPrefix = self::firstNonEmpty(
+            (string) config('akahu.internal_account_prefix', ''),
+            $input['akahu_internal_account_prefix'] ?? '',
+            $configuration->getAkahuInternalAccountPrefix(),
+        );
+        $mortgagePattern = self::firstNonEmpty(
+            (string) config('akahu.mortgage_payment_pattern', ''),
+            $input['akahu_mortgage_payment_pattern'] ?? '',
+            $configuration->getAkahuMortgagePaymentPattern(),
+        );
+
+        return new self($appToken, $userToken, $internalPrefix, $mortgagePattern);
     }
 
     public function apply(Configuration $configuration): void
     {
         $configuration->setAkahuAppToken($this->appToken);
         $configuration->setAkahuUserToken($this->userToken);
+        $configuration->setAkahuInternalAccountPrefix($this->internalAccountPrefix);
+        $configuration->setAkahuMortgagePaymentPattern($this->mortgagePaymentPattern);
     }
 
     private static function firstNonEmpty(string ...$values): string
