@@ -73,7 +73,7 @@ class ExistingConfigurationTest extends TestCase
         $this->assertStringContainsString('/configure-import/', $response->headers->get('Location'));
     }
 
-public function test_akahu_upload_partial_does_not_render_sensitive_or_matching_fields(): void
+    public function test_akahu_upload_partial_does_not_render_sensitive_or_matching_fields(): void
     {
         $html = view('import.003-upload.partials.akahu', [
             'errors'   => new ViewErrorBag(),
