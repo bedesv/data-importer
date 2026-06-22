@@ -11,23 +11,23 @@ use Tests\TestCase;
 
 class ConfigurationAndSerializationTest extends TestCase
 {
-    public function test_configuration_round_trips_only_akahu_tokens(): void
+    public function test_configuration_round_trips_akahu_fields(): void
     {
         $configuration = Configuration::fromArray([
-            'flow'                 => 'akahu',
-            'akahu_app_token'      => 'config-app',
-            'akahu_user_token'     => 'config-user',
-            'pending_transactions' => true,
+            'flow'                           => 'akahu',
+            'akahu_app_token'                => 'config-app',
+            'akahu_user_token'               => 'config-user',
+            'akahu_internal_account_prefix'  => '12-3456',
+            'akahu_mortgage_payment_pattern' => '^DUE',
+            'pending_transactions'           => true,
         ]);
 
         $array = $configuration->toArray();
 
         $this->assertSame('config-app', $array['akahu_app_token']);
         $this->assertSame('config-user', $array['akahu_user_token']);
-        $this->assertSame(
-            ['akahu_app_token', 'akahu_user_token'],
-            array_values(array_filter(array_keys($array), static fn (string $key): bool => str_starts_with($key, 'akahu_')))
-        );
+        $this->assertSame('12-3456', $array['akahu_internal_account_prefix']);
+        $this->assertSame('^DUE', $array['akahu_mortgage_payment_pattern']);
     }
 
     public function test_akahu_accounts_round_trip_through_import_job_serialization(): void
