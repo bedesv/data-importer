@@ -1,10 +1,21 @@
 name: Sync main with upstream
 
 # Keeps this fork's main branch up to date with the upstream
-# firefly-iii/data-importer main branch. Uses GitHub's native fork
-# "merge-upstream" API, which fast-forwards main when there are no
-# local commits ahead of upstream. Runs on a daily schedule and can
-# also be triggered manually.
+# firefly-iii/data-importer main branch, then propagates those changes
+# into dev.
+#
+# 1. Fast-forwards main from upstream via GitHub's native fork
+#    "merge-upstream" API.
+# 2. If (and only if) main actually moved, creates a dated branch
+#    (sync-upstream/dev-YYYYMMDD) and rebases dev onto the updated main.
+#      - On a clean rebase, the branch is dev replayed on top of upstream.
+#      - On conflicts, the rebase is aborted and the branch is pointed at
+#        the freshly-synced main instead, so the PR is never empty and is
+#        flagged as needing a manual rebase.
+# 3. Opens (or reuses) a PR from that branch into dev and assigns the
+#    repository owner.
+#
+# Runs on a daily schedule and can also be triggered manually.
 
 on:
   schedule:
@@ -18,17 +29,89 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Merge upstream into main
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync main with upstream
+        id: sync
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          before="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
             "/repos/${GITHUB_REPOSITORY}/merge-upstream" \
             -f branch=main
+          after="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$before" != "$after" ]; then
+            echo "main updated: ${before} -> ${after}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main already up to date with upstream"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase dev onto updated main
+        id: rebase
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main dev
+
+          branch="sync-upstream/dev-$(date -u +%Y%m%d)"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+          # Start the sync branch from the current dev tip.
+          git checkout -B "${branch}" origin/dev
+
+          if git rebase origin/main; then
+            echo "Rebase of dev onto main succeeded."
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Rebase hit conflicts; aborting and falling back to raw upstream main."
+            git rebase --abort
+            # A branch identical to dev would yield an empty PR, so point it at
+            # the freshly-synced main (which carries the upstream delta dev lacks).
+            git reset --hard origin/main
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          git push --force origin "${branch}"
+
+      - name: Open pull request into dev
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="${{ steps.rebase.outputs.branch }}"
+
+          if [ "${{ steps.rebase.outputs.conflict }}" = "true" ]; then
+            title="⚠️ Sync dev with upstream (manual rebase needed) — ${branch}"
+            body=$'Automated upstream sync.\n\n**The automatic rebase of `dev` onto the updated `main` hit conflicts and was aborted.** This branch currently points at the freshly-synced `main`, so this PR contains the upstream delta but **not** your `dev` commits replayed on top.\n\nTo resolve, rebase locally and force-push to this branch:\n\n```sh\ngit fetch origin\ngit checkout -B '"${branch}"' origin/dev\ngit rebase origin/main   # resolve conflicts\ngit push --force origin '"${branch}"'\n```'
+          else
+            title="Sync dev with upstream — ${branch}"
+            body=$'Automated upstream sync.\n\n`dev` has been rebased onto the latest upstream `main` (synced from firefly-iii/data-importer). Review and merge to bring the upstream changes into `dev`.'
+          fi
+
+          existing="$(gh pr list --head "${branch}" --base dev --state open --json number --jq 'length')"
+          if [ "${existing}" != "0" ]; then
+            echo "An open PR already exists for ${branch}; the force-push has updated it."
+            exit 0
+          fi
+
+          gh pr create \
+            --base dev \
+            --head "${branch}" \
+            --title "${title}" \
+            --body "${body}" \
+            --assignee "${{ github.repository_owner }}"
