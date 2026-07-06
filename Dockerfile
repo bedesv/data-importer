@@ -13,7 +13,11 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build front-end assets with Vite (kept out of the runtime image).
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS frontend
+# Built natively on the build host (never under QEMU emulation): the output is
+# static JS/CSS, so it doesn't need to match the final image's target platform,
+# and building it under emulation crashes (esbuild's native binary hits
+# "Illegal instruction" under QEMU when cross-building for linux/arm64).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend
 
 WORKDIR /app
 
