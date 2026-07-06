@@ -17,7 +17,7 @@
 # static JS/CSS, so it doesn't need to match the final image's target platform,
 # and building it under emulation crashes (esbuild's native binary hits
 # "Illegal instruction" under QEMU when cross-building for linux/arm64).
-FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 
 WORKDIR /app
 
