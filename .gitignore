@@ -23,3 +23,6 @@ public/build
 
 # ignore IDE/editor specific files
 .history
+
+# ignore macOS metadata files
+.DS_Store
