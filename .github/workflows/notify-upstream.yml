@@ -1,0 +1,116 @@
+name: Notify on upstream changes
+
+# Watches the upstream firefly-iii/data-importer main branch and, when it has
+# commits that are not yet in this fork's dev branch, opens (or updates) a
+# tracking issue listing them. It does NOT sync anything — you decide when and
+# how to integrate upstream work into dev.
+#
+# Detection is patch-id aware (git rev-list --cherry-pick), so upstream commits
+# already integrated into dev under a different SHA (via squash-merge,
+# cherry-pick, or an upstream history rewrite) are not reported. In the normal
+# rebase-based flow, upstream commits keep their SHAs and this reduces to a
+# plain ancestry check.
+#
+# One reusable tracking issue is kept: it is updated as more upstream commits
+# land and closed automatically once dev contains everything.
+
+on:
+  schedule:
+    # Daily at 06:00 UTC. Adjust the cron expression to change the cadence.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: notify-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  UPSTREAM_REPO: firefly-iii/data-importer
+  UPSTREAM_BRANCH: main
+  TRACK_LABEL: upstream-sync
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare dev against upstream
+        id: compare
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+          git fetch --no-tags origin dev
+
+          range="origin/dev...upstream/${UPSTREAM_BRANCH}"
+          count="$(git rev-list --count --right-only --cherry-pick --no-merges "${range}")"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          echo "Outstanding upstream commits not in dev: ${count}"
+
+          [ "${count}" -eq 0 ] && exit 0
+
+          upstream_owner="${UPSTREAM_REPO%%/*}"
+          compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/dev...${upstream_owner}:${UPSTREAM_BRANCH}"
+
+          # Untrusted upstream commit text is written straight to a file here —
+          # never routed through a templated Actions expression or an
+          # expandable heredoc — so it cannot be interpreted as shell syntax.
+          {
+            echo "The upstream branch \`${UPSTREAM_REPO}@${UPSTREAM_BRANCH}\` has ${count} commit(s) not yet in \`dev\`."
+            echo
+            echo "**Outstanding commits:**"
+            echo
+            git log --right-only --cherry-pick --no-merges \
+              --pretty=format:'- [`%h`](https://github.com/'"${UPSTREAM_REPO}"'/commit/%H) %s — %an' \
+              "${range}"
+            echo
+            echo
+            echo "[View the full diff](${compare_url})"
+            echo
+            echo "---"
+            echo "_Maintained automatically by the \`notify-upstream\` workflow. It updates as more upstream commits land, and closes once \`dev\` contains everything._"
+          } > "${RUNNER_TEMP}/issue-body.md"
+
+      - name: Open or update tracking issue
+        if: steps.compare.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ steps.compare.outputs.count }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          gh label create "${TRACK_LABEL}" --color BFD4F2 \
+            --description "Upstream has commits not yet in dev" --force >/dev/null 2>&1 || true
+
+          title="Upstream data-importer has ${COUNT} commit(s) not in dev"
+          body_file="${RUNNER_TEMP}/issue-body.md"
+
+          number="$(gh issue list --label "${TRACK_LABEL}" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${number}" ]; then
+            gh issue edit "${number}" --title "${title}" --body-file "${body_file}"
+            echo "Updated existing tracking issue #${number}."
+          else
+            gh issue create --title "${title}" --body-file "${body_file}" \
+              --label "${TRACK_LABEL}" \
+              --assignee "${OWNER}"
+          fi
+
+      - name: Close tracking issue when dev is caught up
+        if: steps.compare.outputs.count == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          number="$(gh issue list --label "${TRACK_LABEL}" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${number}" ]; then
+            gh issue close "${number}" \
+              --comment "\`dev\` now contains all upstream commits. Closing automatically."
+            echo "Closed tracking issue #${number}."
+          else
+            echo "Nothing outstanding and no open tracking issue."
+          fi
