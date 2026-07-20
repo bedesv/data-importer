@@ -147,6 +147,7 @@ class AkahuServiceTest extends TestCase
     public function test_ensure_fresh_accounts_checks_once_before_first_poll_sleep(): void
     {
         config()->set('akahu.connection_timeout', 30);
+        config()->set('akahu.always_refresh', true);
         config()->set('akahu.stale_refresh_hours', 2);
         config()->set('akahu.refresh_poll_seconds', 10);
         config()->set('akahu.refresh_wait_timeout_seconds', 30);
@@ -176,7 +177,7 @@ class AkahuServiceTest extends TestCase
                 'items' => [[
                     '_id'       => 'acc-123',
                     'name'      => 'Cheque',
-                    'refreshed' => ['transactions' => now()->toIso8601String()],
+                    'refreshed' => ['transactions' => now()->addMinutes(5)->toIso8601String()],
                 ]],
             ], JSON_THROW_ON_ERROR)));
 
@@ -195,6 +196,98 @@ class AkahuServiceTest extends TestCase
 
         $this->assertCount(1, $accounts);
         $this->assertSame([], $sleeps);
+    }
+
+    public function test_ensure_fresh_accounts_triggers_refresh_even_when_not_stale(): void
+    {
+        config()->set('akahu.connection_timeout', 30);
+        config()->set('akahu.always_refresh', true);
+        config()->set('akahu.stale_refresh_hours', 2);
+        config()->set('akahu.refresh_poll_seconds', 10);
+        config()->set('akahu.refresh_wait_timeout_seconds', 30);
+
+        $recentBefore = now()->subMinute()->toIso8601String();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // First fetch: account is well within the staleness window, so the
+        // old behaviour would have returned immediately without refreshing.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'items' => [[
+                    '_id'       => 'acc-123',
+                    'name'      => 'Cheque',
+                    'refreshed' => ['transactions' => $recentBefore],
+                ]],
+            ], JSON_THROW_ON_ERROR)));
+        // A refresh must still be triggered.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        // And we must wait until the refreshed timestamp advances past the trigger.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'items' => [[
+                    '_id'       => 'acc-123',
+                    'name'      => 'Cheque',
+                    'refreshed' => ['transactions' => now()->addMinutes(5)->toIso8601String()],
+                ]],
+            ], JSON_THROW_ON_ERROR)));
+
+        $service = new AkahuService($client);
+        $service->setConfiguration(Configuration::fromArray([
+            'flow'             => 'akahu',
+            'akahu_app_token'  => 'app-token',
+            'akahu_user_token' => 'user-token',
+        ]));
+        $service->setSleepHandler(static function (): void {});
+
+        $accounts = $service->ensureFreshAccounts(['acc-123']);
+
+        $this->assertCount(1, $accounts);
+    }
+
+    public function test_ensure_fresh_accounts_skips_refresh_when_disabled_and_not_stale(): void
+    {
+        config()->set('akahu.connection_timeout', 30);
+        config()->set('akahu.always_refresh', false);
+        config()->set('akahu.stale_refresh_hours', 2);
+        config()->set('akahu.refresh_poll_seconds', 10);
+        config()->set('akahu.refresh_wait_timeout_seconds', 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Only a single accounts fetch is expected: recent data + refresh disabled
+        // means no POST /refresh and no polling.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'items' => [[
+                    '_id'       => 'acc-123',
+                    'name'      => 'Cheque',
+                    'refreshed' => ['transactions' => now()->subMinute()->toIso8601String()],
+                ]],
+            ], JSON_THROW_ON_ERROR)));
+
+        $service = new AkahuService($client);
+        $service->setConfiguration(Configuration::fromArray([
+            'flow'             => 'akahu',
+            'akahu_app_token'  => 'app-token',
+            'akahu_user_token' => 'user-token',
+        ]));
+        $service->setSleepHandler(static function (): void {});
+
+        $accounts = $service->ensureFreshAccounts(['acc-123']);
+
+        $this->assertCount(1, $accounts);
     }
 
     public function test_fetch_accounts_retries_rate_limited_request_after_retry_after_delay(): void

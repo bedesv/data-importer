@@ -36,6 +36,7 @@ class ImportJobRepositoryTest extends TestCase
                 'status'   => 'active',
             ]),
         ]);
+        config()->set('akahu.always_refresh', false);
         $akahu->shouldReceive('needsRefresh')->once()->andReturn(false);
         app()->instance(AkahuService::class, $akahu);
 
@@ -88,6 +89,7 @@ class ImportJobRepositoryTest extends TestCase
                 'status'   => 'active',
             ]),
         ]);
+        config()->set('akahu.always_refresh', false);
         $akahu->shouldReceive('needsRefresh')->once()->andReturn(false);
         app()->instance(AkahuService::class, $akahu);
 
