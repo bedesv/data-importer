@@ -76,24 +76,61 @@ class AkahuService
      */
     public function ensureFreshAccounts(array $selectedAccountIds): array
     {
-        $accounts = $this->fetchAccounts();
-        if (!$this->needsRefresh($accounts, $selectedAccountIds)) {
+        $accounts      = $this->fetchAccounts();
+        $alwaysRefresh = (bool) config('akahu.always_refresh', true);
+
+        // When always_refresh is disabled, fall back to the staleness heuristic and
+        // skip the refresh entirely when the selected accounts are recent enough.
+        if (!$alwaysRefresh && !$this->needsRefresh($accounts, $selectedAccountIds)) {
             return $accounts;
         }
 
+        $triggeredAt  = CarbonImmutable::now();
         $this->refreshAccounts();
         $timeoutAt    = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 180));
         $pollInterval = max(1, (int) config('akahu.refresh_poll_seconds', 10));
 
         while (CarbonImmutable::now()->lte($timeoutAt)) {
             $accounts = $this->fetchAccounts();
-            if (!$this->needsRefresh($accounts, $selectedAccountIds)) {
+            // When forcing a refresh we wait for the newly triggered refresh to land
+            // (each account refreshed at/after the trigger); otherwise the staleness
+            // window is enough to consider the data fresh.
+            $settled = $alwaysRefresh
+                ? $this->refreshCompletedSince($accounts, $selectedAccountIds, $triggeredAt)
+                : !$this->needsRefresh($accounts, $selectedAccountIds);
+            if ($settled) {
                 return $accounts;
             }
             $this->pause($pollInterval);
         }
 
         throw new ImporterErrorException('Akahu account refresh did not complete within the configured timeout.');
+    }
+
+    /**
+     * Whether every selected account has been refreshed at or after $since.
+     *
+     * @param array<Account> $accounts
+     */
+    private function refreshCompletedSince(array $accounts, array $selectedAccountIds, CarbonImmutable $since): bool
+    {
+        $byId = [];
+        foreach ($accounts as $account) {
+            $byId[$account->getIdentifier()] = $account;
+        }
+
+        foreach ($selectedAccountIds as $selectedId) {
+            $account = $byId[$selectedId] ?? null;
+            if (null === $account) {
+                return false;
+            }
+            $refreshed = $account->getRefreshedTransactions();
+            if (null === $refreshed || $refreshed->lt($since)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

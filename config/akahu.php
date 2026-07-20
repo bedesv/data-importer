@@ -10,6 +10,7 @@ return [
     'internal_account_prefix'      => env('AKAHU_INTERNAL_ACCOUNT_PREFIX', ''),
     'mortgage_payment_pattern'     => env('AKAHU_MORTGAGE_PAYMENT_PATTERN', ''),
     'connection_timeout'           => env('AKAHU_CONNECTION_TIMEOUT', 30),
+    'always_refresh'               => env('AKAHU_ALWAYS_REFRESH', true),
     'stale_refresh_hours'          => env('AKAHU_STALE_REFRESH_HOURS', 2),
     'refresh_poll_seconds'         => env('AKAHU_REFRESH_POLL_SECONDS', 10),
     'refresh_wait_timeout_seconds' => env('AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS', 180),
