@@ -138,6 +138,7 @@ class NewJobDataCollectorTest extends TestCase
     {
         config()->set('akahu.app_token', 'env-app');
         config()->set('akahu.user_token', 'env-user');
+        config()->set('akahu.always_refresh', false);
 
         $service = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')
@@ -154,6 +155,44 @@ class NewJobDataCollectorTest extends TestCase
                 ]),
             ]);
         $service->shouldReceive('needsRefresh')->once()->andReturn(false);
+        app()->instance(AkahuService::class, $service);
+
+        $job           = ImportJob::createNew();
+        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $job->setFlow('akahu');
+        $job->setConfiguration($configuration);
+
+        $collector = new NewJobDataCollector();
+        $collector->setImportJob($job);
+
+        $errors = $collector->collectAccounts();
+
+        $this->assertCount(0, $errors);
+        $this->assertCount(1, $collector->getImportJob()->getServiceAccounts());
+    }
+
+    public function test_collect_accounts_triggers_refresh_even_when_not_stale(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+        config()->set('akahu.always_refresh', true);
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('fetchAccounts')
+            ->once()
+            ->andReturn([
+                Account::fromArray([
+                    '_id'       => 'acc-1',
+                    'name'      => 'Cheque',
+                    'currency'  => 'NZD',
+                    'status'    => 'active',
+                ]),
+            ]);
+        // With always_refresh enabled the collector triggers a refresh unconditionally
+        // and never consults the staleness heuristic.
+        $service->shouldReceive('needsRefresh')->never();
+        $service->shouldReceive('refreshAccounts')->once();
         app()->instance(AkahuService::class, $service);
 
         $job           = ImportJob::createNew();
