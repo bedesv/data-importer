@@ -17,7 +17,6 @@ class ConfigurationAndSerializationTest extends TestCase
             'flow'                           => 'akahu',
             'akahu_app_token'                => 'config-app',
             'akahu_user_token'               => 'config-user',
-            'akahu_internal_account_prefix'  => '12-3456',
             'akahu_mortgage_payment_pattern' => '^DUE',
             'pending_transactions'           => true,
         ]);
@@ -26,7 +25,6 @@ class ConfigurationAndSerializationTest extends TestCase
 
         $this->assertSame('config-app', $array['akahu_app_token']);
         $this->assertSame('config-user', $array['akahu_user_token']);
-        $this->assertSame('12-3456', $array['akahu_internal_account_prefix']);
         $this->assertSame('^DUE', $array['akahu_mortgage_payment_pattern']);
     }
 

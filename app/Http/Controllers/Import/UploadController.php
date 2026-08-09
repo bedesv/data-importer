@@ -191,7 +191,6 @@ final class UploadController extends Controller
                 $collector->input = [
                     'akahu_app_token'                => (string) $request->get('akahu_app_token', ''),
                     'akahu_user_token'               => (string) $request->get('akahu_user_token', ''),
-                    'akahu_internal_account_prefix'  => (string) $request->get('akahu_internal_account_prefix', ''),
                     'akahu_mortgage_payment_pattern' => (string) $request->get('akahu_mortgage_payment_pattern', ''),
                 ];
                 $errors           = $collector->validate();

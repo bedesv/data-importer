@@ -108,7 +108,6 @@ The `docker-compose.dev.yml` file reads environment variables from your `.env` f
 - `LOG_LEVEL=debug` - Detailed logging
 - `AKAHU_APP_TOKEN` - Default Akahu app token
 - `AKAHU_USER_TOKEN` - Default Akahu user token
-- `AKAHU_INTERNAL_ACCOUNT_PREFIX` - Prefix used to classify internal transfer accounts
 - `AKAHU_MORTGAGE_PAYMENT_PATTERN` - Regex for mortgage transaction matching
 
 ## Development Workflow
