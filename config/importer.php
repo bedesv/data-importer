@@ -66,6 +66,8 @@ declare(strict_types=1);
 return [
     'version'                       => '2.3.4',
     'build_time'                    => 1782797383,
+    'source_url'                    => 'https://github.com/bedesv/data-importer',
+    'source_revision'               => env('APP_SOURCE_REVISION', ''),
     'fake_data'                     => env('FAKE_DATA', false),
     'providers'                     => [
         'file'      => [
