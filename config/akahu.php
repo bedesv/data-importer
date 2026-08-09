@@ -7,7 +7,6 @@ return [
     'default_currency'             => env('AKAHU_DEFAULT_CURRENCY', 'NZD'),
     'app_token'                    => env('AKAHU_APP_TOKEN', ''),
     'user_token'                   => env('AKAHU_USER_TOKEN', ''),
-    'internal_account_prefix'      => env('AKAHU_INTERNAL_ACCOUNT_PREFIX', ''),
     'mortgage_payment_pattern'     => env('AKAHU_MORTGAGE_PAYMENT_PATTERN', ''),
     'connection_timeout'           => env('AKAHU_CONNECTION_TIMEOUT', 30),
     'always_refresh'               => env('AKAHU_ALWAYS_REFRESH', true),

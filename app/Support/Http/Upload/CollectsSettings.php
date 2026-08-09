@@ -37,7 +37,6 @@ trait CollectsSettings
         // from config (env vars or uploaded JSON) by AuthenticationValidator and never
         // round-tripped through the view layer, so they don't appear here or in form POSTs.
         return [
-            'internal_account_prefix'  => old('akahu_internal_account_prefix') ?? config('akahu.internal_account_prefix'),
             'mortgage_payment_pattern' => old('akahu_mortgage_payment_pattern') ?? config('akahu.mortgage_payment_pattern'),
         ];
     }

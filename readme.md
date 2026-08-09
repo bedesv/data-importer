@@ -1,126 +1,94 @@
-# Firefly III Data Importer
+# Firefly III Data Importer with Akahu support
 
-[![Packagist][packagist-shield]][packagist-url]
-[![License][license-shield]][license-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Donate][donate-shield]][donate-url]
+This is a personal, unofficial fork of the [Firefly III Data Importer](https://github.com/firefly-iii/data-importer). It adds direct imports from [Akahu](https://www.akahu.nz/) for New Zealand bank accounts, along with a small number of optional behaviours that suit how I use Firefly III.
 
-<!-- PROJECT LOGO -->
-<br />
-<p align="center">
-  <a href="https://firefly-iii.org/">
-    <img src="https://raw.githubusercontent.com/firefly-iii/firefly-iii/develop/.github/assets/img/logo-small.png" alt="Firefly III" width="120" height="178">
-  </a>
-</p>
-  <h1 align="center">Firefly III Data Importer</h1>
+I keep these changes in a fork because they were developed with AI assistance, while the upstream project does not accept AI-generated contributions. The fork lets me continue using and improving them without asking the upstream maintainers to support them.
 
-  <p align="center">
-    Import your transactions into Firefly III
-    <br />
-    <a href="https://docs.firefly-iii.org/"><strong>Explore the documentation</strong></a>
-    <br />
-    <br />
-    <a href="https://github.com/firefly-iii/firefly-iii/issues">Report a bug</a>
-    ·
-    <a href="https://github.com/firefly-iii/firefly-iii/issues">Request a feature</a>
-    ·
-    <a href="https://github.com/firefly-iii/firefly-iii/discussions">Ask questions</a>
-  </p>
+I intend to keep the fork reasonably close to upstream, but updates may lag behind new upstream releases. It is primarily maintained for my own use, so fork-specific features may reflect my banking and budgeting setup. Features of that kind will be optional wherever practical.
 
+## Start with the upstream documentation
 
-## About the data importer
+Unless this README says otherwise, installation, configuration and use are the same as the upstream Data Importer. See the [official Firefly III Data Importer documentation](https://docs.firefly-iii.org/how-to/data-importer/) for the general setup and workflow.
 
-"Firefly III" is a (self-hosted) manager for your personal finances. It can help you keep track of your expenses and income, so you can spend less and save more. The **Firefly III Data Importer** is built to help you import transactions into Firefly III. It is separated from Firefly III for security and maintenance reasons.
+This README only documents behaviour added or changed by this fork.
 
-The data importer does not connect to your bank directly. Instead, it uses [third party data providers](https://docs.firefly-iii.org/how-to/data-importer/import/third-party-providers/) to help you import data into Firefly III. Some of these providers are free of charge, others charge money.
+## What this fork adds
 
-If you do not want to rely on third parties to import your data, you can import data using the following file formats:
+- Akahu as an import provider, including account discovery and mapping.
+- Imports of settled transactions, with the option to include pending transactions.
+- Fresh account data requested from Akahu before an import.
+- Detection of transfers between selected Akahu accounts.
+- Optional matching for mortgage payments whose bank descriptions follow a specific pattern.
+- Akahu transaction identifiers used for duplicate detection.
 
-- CSV
-- CAMT.052
-- CAMT.053
+## Akahu configuration
 
-Other formats are on my to do list :-).
+Create an [Akahu personal app](https://developers.akahu.nz/docs/personal-apps) with access to the accounts you want to import, then provide its tokens to the importer:
 
-You can run the data importer once, for a bulk import. You can also run it regularly to keep up with new transactions.
+```dotenv
+AKAHU_APP_TOKEN=replace-with-your-app-token
+AKAHU_USER_TOKEN=replace-with-your-user-token
+```
 
-Eager to get started? Go to [the documentation](https://docs.firefly-iii.org/)!
+Treat the user token as a password. Akahu credentials are read from the environment, are not displayed by the web importer, and are removed from downloaded configuration files. Scheduled imports therefore also need the tokens in their environment.
 
-## Features
+After starting the importer using the normal upstream instructions, choose **Akahu** as the import provider and map the Akahu accounts you want to import to Firefly III accounts.
 
-* Import from many banks using third party data providers
-* Import over the command line for easy automation
-* Import over an API for easy automation
-* Use rules and data mapping for transaction clarity
+### Akahu-specific environment variables
 
-Many more features are listed in the [documentation](https://docs.firefly-iii.org/).
+| Variable | Default | Purpose |
+|---|---|---|
+| `AKAHU_APP_TOKEN` | Empty | Akahu application token; required. |
+| `AKAHU_USER_TOKEN` | Empty | Akahu user token; required. |
+| `AKAHU_MORTGAGE_PAYMENT_PATTERN` | Empty | Optional regular expression for identifying mortgage-payment descriptions. |
+| `AKAHU_ALWAYS_REFRESH` | `true` | Request fresh account data for every import. |
+| `AKAHU_STALE_REFRESH_HOURS` | `2` | Maximum data age when `AKAHU_ALWAYS_REFRESH` is disabled. |
+| `AKAHU_REFRESH_POLL_SECONDS` | `10` | Delay between refresh-status checks. |
+| `AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS` | `180` | Maximum time to wait for a refresh. |
+| `AKAHU_CONNECTION_TIMEOUT` | `30` | Akahu HTTP request timeout in seconds. |
+| `AKAHU_BASE_URL` | `https://api.akahu.io/v1` | Alternative Akahu API URL, mainly for testing or proxies. |
+| `AKAHU_DEFAULT_CURRENCY` | `NZD` | Fallback when Akahu does not provide an account currency. |
 
-## Who's it for?
+Environment values take precedence over values stored in an import configuration.
 
-This application is for people who want to track their finances, keep an eye on their money **without having to upload their financial records to the cloud**. You're a bit tech-savvy, you like open source software, and you don't mind tinkering with (self-hosted) servers.
+## Fork-specific transaction behaviour
 
-## Getting Started
+### Internal transfers
 
-Many more features are listed in the [documentation](https://docs.firefly-iii.org/).
+When Akahu identifies a transaction as a transfer, the importer compares its opposing account number with the other selected Akahu accounts. If both accounts are mapped to Firefly III accounts, the transaction is imported as an internal transfer and only one side is kept.
 
-## Contributing
+If the other account is not selected or mapped, the transaction remains an ordinary deposit or withdrawal so that it is not silently lost.
 
-You can contact me at [james@firefly-iii.org](mailto:james@firefly-iii.org), you may open an issue in the [main repository](https://github.com/firefly-iii/firefly-iii) or contact me through [gitter](https://gitter.im/firefly-iii/firefly-iii) and [Mastodon](https://fosstodon.org/@ff3).
+### Optional mortgage-payment matching
 
-Of course, there are some [contributing guidelines](https://github.com/firefly-iii/data-importer/blob/main/.github/contributing.md) and a [code of conduct](https://github.com/firefly-iii/data-importer/blob/main/.github/code_of_conduct.md), which I invite you to check out.
+This works like internal-transfer detection, except it keeps the debit side of the transaction instead of the credit side. The result is recorded as a withdrawal from the paying account to the mapped mortgage account.
 
-I can always use your help [squashing bugs](https://docs.firefly-iii.org/explanation/support/#contributing-code), thinking about [new features](https://docs.firefly-iii.org/explanation/support/#contributing-code) or [translating Firefly III](https://docs.firefly-iii.org/how-to/firefly-iii/development/translations/) into other languages.
+I use this because of how my bank describes mortgage payments; you probably do not need it. To enable it, set `AKAHU_MORTGAGE_PAYMENT_PATTERN` to a regular expression that matches those descriptions. Leave it empty to disable the feature.
 
-There is also a [security policy](https://github.com/firefly-iii/data-importer/security/policy).
+The matching description must refer to a selected, mapped mortgage account. Invalid regular expressions are rejected during configuration validation.
 
-<!-- SPONSOR TEXT -->
+### Pending transactions
 
-## Support the development of Firefly III
+Akahu does not assign identifiers to pending transactions, so the importer generates one from the available transaction data and adds a `pending` tag.
 
-Firefly III is a side gig. With your sponsorship or support, I can spend more time on Firefly III. So, if you like Firefly III, and if it helps you save lots of money, why not send me a dime for every dollar saved! 🥳
+When the transaction settles, Akahu assigns it a different identifier. Duplicate detection cannot link the settled transaction to the pending one, so both may be imported into Firefly III. I personally don't use this, but you can enable pending transactions if you are comfortable reconciling those duplicates yourself.
 
-OK, that was a joke. But for real, when you feel Firefly III made your life better, please consider contributing as a sponsor. Please check out my [Patreon](https://www.patreon.com/jc5) and [GitHub Sponsors](https://github.com/sponsors/JC5) page for more information. You can also [buy me a ☕️ coffee at ko-fi.com](https://ko-fi.com/Q5Q5R4SH1) or send something my way using [Liberapay](https://liberapay.com/JC5). Thank you for your consideration.
+### Refresh behaviour
 
-### Sponsorships
+By default, each import requests a fresh update from Akahu and waits for all selected accounts to finish refreshing. The import fails instead of silently using old data if the refresh does not complete within the configured timeout.
 
-Firefly III is sponsored by LamdaTest. Their support allows me to test Firefly III more easily and introduce even fewer bugs with every release.
+Set `AKAHU_ALWAYS_REFRESH=false` to request an update only when the account data is older than `AKAHU_STALE_REFRESH_HOURS`.
 
-<p style="font-size:21px; color:black;">Browser testing via
-<a href="https://www.lambdatest.com/?utm_source=fireflyiii&utm_medium=sponsor" target="_blank">
-<img src="https://www.lambdatest.com/blue-logo.png" style="vertical-align: middle;" width="250" height="45" />
-</a>
-</p>
+### Duplicate detection
 
-<!-- END OF SPONSOR TEXT -->
+Akahu transaction identifiers are stored as Firefly III external and internal references. New Akahu configurations use the external identifier for duplicate detection.
 
-## License
+## Support and upstream updates
 
-This work [is licensed](https://github.com/firefly-iii/data-importer/blob/main/LICENSE) under the [GNU Affero General Public License v3](https://www.gnu.org/licenses/agpl-3.0.html).
+Use the [upstream documentation](https://docs.firefly-iii.org/how-to/data-importer/) for standard Data Importer questions. Report problems specific to Akahu or the behaviour above in this repository rather than to the Firefly III maintainers.
 
-<!-- HELP TEXT -->
+Upstream changes are tracked, but they are reviewed and integrated manually. There may be a delay before this fork includes a new upstream release.
 
-## Do you need help, or do you want to get in touch?
+## Licence
 
-Do you want to contact me? You can email me at [james@firefly-iii.org](mailto:james@firefly-iii.org) or get in touch through one of the following support channels:
-
-- [GitHub Discussions](https://github.com/firefly-iii/firefly-iii/discussions/) for questions and support
-- [Gitter.im](https://gitter.im/firefly-iii/firefly-iii) for a good chat and a quick answer
-- [GitHub Issues](https://github.com/firefly-iii/firefly-iii/issues) for bugs and issues. Issues are collected centrally, in the [Firefly III repository](https://github.com/firefly-iii/firefly-iii).
-- <a rel="me" href="https://fosstodon.org/@ff3">Mastodon</a> for news and updates
-
-<!-- END OF HELP TEXT -->
-
-## Acknowledgements
-
-The Firefly III logo is made by the excellent Cherie Woo.
-
-[packagist-shield]: https://img.shields.io/packagist/v/firefly-iii/data-importer.svg?style=flat-square
-[packagist-url]: https://packagist.org/packages/firefly-iii/data-importer
-[license-shield]: https://img.shields.io/github/license/firefly-iii/data-importer.svg?style=flat-square
-[license-url]: https://www.gnu.org/licenses/agpl-3.0.html
-[stars-shield]: https://img.shields.io/github/stars/firefly-iii/data-importer.svg?style=flat-square
-[stars-url]: https://github.com/firefly-iii/data-importer/stargazers
-[donate-shield]: https://img.shields.io/badge/donate-%24%20%E2%82%AC-brightgreen?style=flat-square
-[donate-url]: #support-the-development-of-firefly-iii
-[hack-shield]: https://cdn.huntr.dev/huntr_security_badge_mono.svg
-[hack-url]: https://huntr.dev/bounties/disclose
+This fork remains licensed under the [GNU Affero General Public License v3](LICENSE). The original Firefly III Data Importer is maintained by the Firefly III project and its contributors.
