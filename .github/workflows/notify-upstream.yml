@@ -85,20 +85,37 @@ jobs:
           COUNT: ${{ steps.compare.outputs.count }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          gh label create "${TRACK_LABEL}" --color BFD4F2 \
-            --description "Upstream has commits not yet in dev" --force >/dev/null 2>&1 || true
+          label_available=false
+          if gh label create "${TRACK_LABEL}" --repo "${GITHUB_REPOSITORY}" \
+            --color BFD4F2 --description "Upstream has commits not yet in dev" --force; then
+            label_available=true
+          else
+            echo "::warning::Could not create or update '${TRACK_LABEL}'; continuing without the optional label."
+          fi
 
           title="Upstream data-importer has ${COUNT} commit(s) not in dev"
           body_file="${RUNNER_TEMP}/issue-body.md"
 
-          number="$(gh issue list --label "${TRACK_LABEL}" --state open --json number --jq '.[0].number // empty')"
+          number="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title | startswith("Upstream data-importer has ")))[0].number // empty')"
           if [ -n "${number}" ]; then
-            gh issue edit "${number}" --title "${title}" --body-file "${body_file}"
+            if [ "${label_available}" = true ]; then
+              gh issue edit "${number}" --repo "${GITHUB_REPOSITORY}" \
+                --title "${title}" --body-file "${body_file}" --add-label "${TRACK_LABEL}"
+            else
+              gh issue edit "${number}" --repo "${GITHUB_REPOSITORY}" \
+                --title "${title}" --body-file "${body_file}"
+            fi
             echo "Updated existing tracking issue #${number}."
           else
-            gh issue create --title "${title}" --body-file "${body_file}" \
-              --label "${TRACK_LABEL}" \
-              --assignee "${OWNER}"
+            if [ "${label_available}" = true ]; then
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" \
+                --body-file "${body_file}" --label "${TRACK_LABEL}" --assignee "${OWNER}"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" \
+                --body-file "${body_file}" --assignee "${OWNER}"
+            fi
           fi
 
       - name: Close tracking issue when dev is caught up
@@ -106,9 +123,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          number="$(gh issue list --label "${TRACK_LABEL}" --state open --json number --jq '.[0].number // empty')"
+          number="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title | startswith("Upstream data-importer has ")))[0].number // empty')"
           if [ -n "${number}" ]; then
-            gh issue close "${number}" \
+            gh issue close "${number}" --repo "${GITHUB_REPOSITORY}" \
               --comment "\`dev\` now contains all upstream commits. Closing automatically."
             echo "Closed tracking issue #${number}."
           else
