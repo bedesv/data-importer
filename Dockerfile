@@ -91,6 +91,9 @@ ARG version=develop
 ARG isodate
 ARG gitrevision
 
+# Link the running web application to the exact source revision used to build it.
+ENV APP_SOURCE_REVISION="${gitrevision}"
+
 # ---------------------------------------------------------------------------
 # Stage 3a: web image (nginx + php-fpm via supervisord).
 # ---------------------------------------------------------------------------
@@ -107,7 +110,9 @@ ARG version
 ARG isodate
 ARG gitrevision
 LABEL org.opencontainers.image.title="Firefly III Data Importer (web)" \
-      org.opencontainers.image.source="https://github.com/firefly-iii/data-importer" \
+      org.opencontainers.image.description="Unofficial Firefly III Data Importer fork with Akahu support" \
+      org.opencontainers.image.source="https://github.com/bedesv/data-importer" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${version}" \
       org.opencontainers.image.revision="${gitrevision}" \
       org.opencontainers.image.created="${isodate}"
@@ -125,7 +130,9 @@ ARG version
 ARG isodate
 ARG gitrevision
 LABEL org.opencontainers.image.title="Firefly III Data Importer (cli)" \
-      org.opencontainers.image.source="https://github.com/firefly-iii/data-importer" \
+      org.opencontainers.image.description="Unofficial Firefly III Data Importer fork with Akahu support" \
+      org.opencontainers.image.source="https://github.com/bedesv/data-importer" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${version}" \
       org.opencontainers.image.revision="${gitrevision}" \
       org.opencontainers.image.created="${isodate}"

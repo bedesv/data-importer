@@ -43,7 +43,7 @@
         "management"
     ],
     "license": "AGPL-3.0-or-later",
-    "homepage": "https://github.com/firefly-iii/data-importer",
+    "homepage": "https://github.com/bedesv/data-importer",
     "type": "project",
     "readme": "readme.md",
     "authors": [
@@ -55,10 +55,8 @@
         }
     ],
     "support": {
-        "email": "james@firefly-iii.org",
-        "issues": "https://github.com/firefly-iii/firefly-iii/issues",
-        "forum": "https://gitter.im/firefly-iii/firefly-iii",
-        "source": "https://github.com/firefly-iii/data-importer",
+        "issues": "https://github.com/bedesv/data-importer/issues",
+        "source": "https://github.com/bedesv/data-importer",
         "docs": "https://docs.firefly-iii.org/"
     },
     "funding": [
