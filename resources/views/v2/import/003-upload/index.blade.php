@@ -48,7 +48,7 @@
                         @endif
                         @if('akahu' === $flow)
                         <p>
-                            Akahu credentials and matching rules are managed through the importer environment.
+                            Akahu credentials and mortgage matching are managed through the importer environment.
                         </p>
                         @endif
                     </div>
