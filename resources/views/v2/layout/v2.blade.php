@@ -72,6 +72,8 @@
 
 @yield('content')
 
+@include('layout.legal')
+
 <!-- Optional JavaScript -->
 
 @yield('scripts')

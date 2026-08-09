@@ -1,6 +1,6 @@
 # Firefly III Data Importer with Akahu support
 
-This is a personal, unofficial fork of the [Firefly III Data Importer](https://github.com/firefly-iii/data-importer). It adds direct imports from [Akahu](https://www.akahu.nz/) for New Zealand bank accounts, along with a small number of optional behaviours that suit how I use Firefly III.
+This is a personal, unofficial fork of the [Firefly III Data Importer](https://github.com/firefly-iii/data-importer). Fork-specific modifications began on 14 March 2026. It adds direct imports from [Akahu](https://www.akahu.nz/) for New Zealand bank accounts, along with a small number of optional behaviours that suit how I use Firefly III.
 
 I keep these changes in a fork because they were developed with AI assistance, while the upstream project does not accept AI-generated contributions. The fork lets me continue using and improving them without asking the upstream maintainers to support them.
 
@@ -85,10 +85,10 @@ Akahu transaction identifiers are stored as Firefly III external and internal re
 
 ## Support and upstream updates
 
-Use the [upstream documentation](https://docs.firefly-iii.org/how-to/data-importer/) for standard Data Importer questions. Report problems specific to Akahu or the behaviour above in this repository rather than to the Firefly III maintainers.
+Use the [upstream documentation](https://docs.firefly-iii.org/how-to/data-importer/) for standard Data Importer questions. Report problems specific to Akahu or the behaviour above in [this fork's repository](https://github.com/bedesv/data-importer) rather than to the Firefly III maintainers.
 
 Upstream changes are tracked, but they are reviewed and integrated manually. There may be a delay before this fork includes a new upstream release.
 
-## Licence
+## Source and licence
 
-This fork remains licensed under the [GNU Affero General Public License v3](LICENSE). The original Firefly III Data Importer is maintained by the Firefly III project and its contributors.
+The complete [source code for this modified fork](https://github.com/bedesv/data-importer) is available at no charge. This fork remains licensed under the [GNU Affero General Public License version 3 or later](LICENSE). The original Firefly III Data Importer is maintained by the Firefly III project and its contributors.
