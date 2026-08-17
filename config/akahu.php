@@ -11,8 +11,9 @@ return [
     'connection_timeout'           => env('AKAHU_CONNECTION_TIMEOUT', 30),
     'always_refresh'               => env('AKAHU_ALWAYS_REFRESH', true),
     'stale_refresh_hours'          => env('AKAHU_STALE_REFRESH_HOURS', 2),
+    'refresh_cooldown_minutes'     => env('AKAHU_REFRESH_COOLDOWN_MINUTES', 15),
     'refresh_poll_seconds'         => env('AKAHU_REFRESH_POLL_SECONDS', 10),
-    'refresh_wait_timeout_seconds' => env('AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS', 180),
+    'refresh_wait_timeout_seconds' => env('AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS', 45),
     'unique_column_options'        => [
         'external-id' => 'External identifier',
     ],
