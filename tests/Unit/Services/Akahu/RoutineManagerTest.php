@@ -37,6 +37,7 @@ class RoutineManagerTest extends TestCase
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
         $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'])->andReturn($serviceAccounts);
+        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
                 '_id'         => 'tx-1',
@@ -84,6 +85,7 @@ class RoutineManagerTest extends TestCase
         $service = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
         $service->shouldReceive('ensureFreshAccounts')->once()->andThrow(new ImporterErrorException('Akahu account refresh did not complete within the configured timeout.'));
+        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         app()->instance(AkahuService::class, $service);
 
         $job           = ImportJob::createNew();
@@ -135,6 +137,7 @@ class RoutineManagerTest extends TestCase
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
         $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1', 'acc-2'])->andReturn($serviceAccounts);
+        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
                 '_id'         => 'tx-transfer',

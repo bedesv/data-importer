@@ -51,6 +51,9 @@ final class RoutineManager implements RoutineManagerInterface
         $selectedIds                   = array_keys($accountMapping);
 
         $freshAccounts                 = $this->service->ensureFreshAccounts($selectedIds);
+        foreach ($this->service->getRefreshWarnings() as $warning) {
+            $this->importJob->conversionStatus->addWarning(0, $warning);
+        }
         if (0 !== count($freshAccounts)) {
             $this->importJob->setServiceAccounts($freshAccounts);
             $this->existingServiceAccounts = $freshAccounts;

@@ -14,6 +14,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use JsonException;
 use SensitiveParameter;
@@ -25,7 +26,10 @@ class AkahuService
     private Configuration $configuration;
     private ClientInterface $client;
     /** @var null|callable */
-    private $sleepHandler = null;
+    private $sleepHandler              = null;
+    private ?CarbonImmutable $deadline = null;
+    /** @var array<string> */
+    private array $refreshWarnings     = [];
 
     public function __construct(?ClientInterface $client = null)
     {
@@ -72,9 +76,50 @@ class AkahuService
     }
 
     /**
+     * Warnings collected during the last ensureFreshAccounts() call, for instance when
+     * Akahu declined the refresh and the import continued on the data it already held.
+     *
+     * @return array<string>
+     */
+    public function getRefreshWarnings(): array
+    {
+        return $this->refreshWarnings;
+    }
+
+    /**
+     * @return array<Account>
      * @throws ImporterErrorException
      */
     public function ensureFreshAccounts(array $selectedAccountIds): array
+    {
+        $this->refreshWarnings = [];
+        // This runs inside the conversion request, so bound the whole operation well
+        // below the web server's own timeout rather than letting a stalled refresh hold
+        // the request open until nginx returns a gateway timeout.
+        $this->deadline        = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 45));
+
+        try {
+            return $this->collectFreshAccounts($selectedAccountIds);
+        } finally {
+            $this->deadline = null;
+        }
+    }
+
+    /**
+     * Whether a refresh was triggered recently enough that Akahu would decline another.
+     */
+    public function refreshTriggeredRecently(): bool
+    {
+        $triggeredAt = $this->lastRefreshTriggeredAt();
+
+        return $triggeredAt instanceof CarbonImmutable && $triggeredAt->gte($this->cooldownStart());
+    }
+
+    /**
+     * @return array<Account>
+     * @throws ImporterErrorException
+     */
+    private function collectFreshAccounts(array $selectedAccountIds): array
     {
         $accounts      = $this->fetchAccounts();
         $alwaysRefresh = (bool) config('akahu.always_refresh', true);
@@ -85,26 +130,90 @@ class AkahuService
             return $accounts;
         }
 
-        $triggeredAt  = CarbonImmutable::now();
-        $this->refreshAccounts();
-        $timeoutAt    = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 180));
+        // Akahu ignores a refresh that arrives too soon after the previous one. Asking
+        // anyway produces a no-op we would then poll on until the deadline, so data from
+        // inside the cooldown window counts as already fresh.
+        if ($this->refreshedSince($accounts, $selectedAccountIds, $this->cooldownStart())) {
+            Log::debug('Akahu: selected accounts were refreshed within the cooldown window, no refresh needed.');
+
+            return $accounts;
+        }
+
+        $triggeredAt   = $this->lastRefreshTriggeredAt();
+        if ($triggeredAt instanceof CarbonImmutable && $triggeredAt->gte($this->cooldownStart())) {
+            // A refresh fired during account collection has not landed yet. Wait for that
+            // one instead of asking Akahu for a second refresh it would only decline.
+            Log::debug('Akahu: waiting for the refresh triggered during account collection.');
+        } else {
+            $triggeredAt = CarbonImmutable::now();
+
+            try {
+                $this->refreshAccounts();
+            } catch (ImporterErrorException $e) {
+                Log::warning('Akahu: refresh request was declined.', ['error' => $e->getMessage()]);
+
+                return $this->useExistingData($accounts, $selectedAccountIds, 'Akahu declined the refresh request');
+            }
+        }
+
+        return $this->waitForRefresh($selectedAccountIds, $alwaysRefresh, $triggeredAt);
+    }
+
+    /**
+     * @return array<Account>
+     * @throws ImporterErrorException
+     */
+    private function waitForRefresh(array $selectedAccountIds, bool $alwaysRefresh, CarbonImmutable $triggeredAt): array
+    {
+        $deadline     = $this->deadline ?? CarbonImmutable::now();
         $pollInterval = max(1, (int) config('akahu.refresh_poll_seconds', 10));
 
-        while (CarbonImmutable::now()->lte($timeoutAt)) {
+        while (true) {
             $accounts = $this->fetchAccounts();
             // When forcing a refresh we wait for the newly triggered refresh to land
             // (each account refreshed at/after the trigger); otherwise the staleness
             // window is enough to consider the data fresh.
-            $settled = $alwaysRefresh
-                ? $this->refreshCompletedSince($accounts, $selectedAccountIds, $triggeredAt)
+            $settled  = $alwaysRefresh
+                ? $this->refreshedSince($accounts, $selectedAccountIds, $triggeredAt)
                 : !$this->needsRefresh($accounts, $selectedAccountIds);
             if ($settled) {
                 return $accounts;
             }
+            if (CarbonImmutable::now()->gte($deadline)) {
+                return $this->useExistingData($accounts, $selectedAccountIds, 'Akahu did not finish the refresh in time');
+            }
             $this->pause($pollInterval);
         }
+    }
 
-        throw new ImporterErrorException('Akahu account refresh did not complete within the configured timeout.');
+    /**
+     * A refresh we could not complete is only fatal when the data Akahu already holds is
+     * too old to import. Otherwise the import continues and the user is warned.
+     *
+     * @param array<Account> $accounts
+     * @return array<Account>
+     * @throws ImporterErrorException
+     */
+    private function useExistingData(array $accounts, array $selectedAccountIds, string $reason): array
+    {
+        if ($this->needsRefresh($accounts, $selectedAccountIds)) {
+            throw new ImporterErrorException(sprintf('%s, and the data it already holds is too old to import.', $reason));
+        }
+
+        $warning                 = sprintf(
+            '%s. Continuing with the account data Akahu already holds, which is less than %d hour(s) old.',
+            $reason,
+            (int) config('akahu.stale_refresh_hours', 2)
+        );
+        Log::warning($warning);
+        $this->refreshWarnings[] = $warning;
+
+        return $accounts;
+    }
+
+    private function cooldownStart(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->subMinutes(max(0, (int) config('akahu.refresh_cooldown_minutes', 15)));
     }
 
     /**
@@ -112,7 +221,7 @@ class AkahuService
      *
      * @param array<Account> $accounts
      */
-    private function refreshCompletedSince(array $accounts, array $selectedAccountIds, CarbonImmutable $since): bool
+    private function refreshedSince(array $accounts, array $selectedAccountIds, CarbonImmutable $since): bool
     {
         $byId = [];
         foreach ($accounts as $account) {
@@ -205,6 +314,38 @@ class AkahuService
     public function refreshAccounts(): void
     {
         $this->requestJson('POST', 'refresh');
+        $this->rememberRefreshTrigger();
+    }
+
+    private function lastRefreshTriggeredAt(): ?CarbonImmutable
+    {
+        $value = Cache::get($this->refreshTriggerCacheKey());
+        if (!is_string($value) || '' === $value) {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function rememberRefreshTrigger(): void
+    {
+        $minutes = max(1, (int) config('akahu.refresh_cooldown_minutes', 15));
+        Cache::put($this->refreshTriggerCacheKey(), CarbonImmutable::now()->toIso8601String(), $minutes * 60);
+    }
+
+    /**
+     * Scoped to the user token so separate Akahu users never share a cooldown. The token
+     * is hashed so it does not reach the cache store in the clear.
+     */
+    private function refreshTriggerCacheKey(): string
+    {
+        $credentials = Credentials::resolve($this->configuration);
+
+        return sprintf('akahu-refresh-triggered-%s', hash('sha256', $credentials->userToken));
     }
 
     /**
@@ -328,6 +469,14 @@ class AkahuService
 
     private function pause(int $seconds): void
     {
+        if ($this->deadline instanceof CarbonImmutable) {
+            // Never sleep past the deadline; the caller is holding an HTTP request open.
+            // This also caps the Retry-After waits of a rate-limited request.
+            $seconds = min($seconds, (int) CarbonImmutable::now()->diffInSeconds($this->deadline, false));
+        }
+        if ($seconds < 1) {
+            return;
+        }
         if (is_callable($this->sleepHandler)) {
             call_user_func($this->sleepHandler, $seconds);
 
