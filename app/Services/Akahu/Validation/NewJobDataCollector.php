@@ -81,10 +81,14 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
 
         // Trigger a background refresh now so data is ready by the time conversion runs.
         // We don't wait here — RoutineManager::start() will wait if needed.
-        // With always_refresh enabled we trigger unconditionally; otherwise we only
-        // trigger when the staleness heuristic says the data needs refreshing.
+        // With always_refresh enabled we trigger whenever the cooldown allows; otherwise
+        // we also need the staleness heuristic to say the data needs refreshing.
         $allIds = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
-        if ((bool) config('akahu.always_refresh', true) || $service->needsRefresh($accounts, $allIds)) {
+        if ($service->refreshTriggeredRecently()) {
+            // Akahu declines refreshes that arrive inside the cooldown window, so asking
+            // again would only spend a request and leave conversion waiting on a no-op.
+            Log::debug('Akahu: a refresh was triggered recently, skipping the early refresh.');
+        } elseif ((bool) config('akahu.always_refresh', true) || $service->needsRefresh($accounts, $allIds)) {
             try {
                 $service->refreshAccounts();
                 Log::debug('Akahu: triggered early account refresh during account collection.');

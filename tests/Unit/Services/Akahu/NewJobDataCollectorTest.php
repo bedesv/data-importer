@@ -150,6 +150,7 @@ class NewJobDataCollectorTest extends TestCase
                     'status'    => 'active',
                 ]),
             ]);
+        $service->shouldReceive('refreshTriggeredRecently')->once()->andReturn(false);
         $service->shouldReceive('needsRefresh')->once()->andReturn(false);
         app()->instance(AkahuService::class, $service);
 
@@ -187,6 +188,7 @@ class NewJobDataCollectorTest extends TestCase
             ]);
         // With always_refresh enabled the collector triggers a refresh unconditionally
         // and never consults the staleness heuristic.
+        $service->shouldReceive('refreshTriggeredRecently')->once()->andReturn(false);
         $service->shouldReceive('needsRefresh')->never();
         $service->shouldReceive('refreshAccounts')->once();
         app()->instance(AkahuService::class, $service);
