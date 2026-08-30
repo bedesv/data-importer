@@ -83,7 +83,7 @@
         "ramsey/uuid": "^4.9",
         "spatie/enum": "^3.10",
         "swaggest/json-schema": "^0.12.43",
-        "symfony/http-client": "^8.0",
+        "symfony/http-client": "^8.1",
         "symfony/mailgun-mailer": "^8.0",
         "thecodingmachine/safe": "^3.4"
     },
