@@ -618,4 +618,71 @@ class AkahuServiceTest extends TestCase
 
         $service->fetchAccounts();
     }
+
+    public function test_ensure_fresh_accounts_forced_refresh_ignores_the_cooldown_window(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Data from inside the cooldown window normally counts as fresh. A forced refresh
+        // must ask Akahu anyway and then wait for that answer to land.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps   = [];
+        $service  = $this->makeService($client, $sleeps);
+
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+
+    public function test_ensure_fresh_accounts_forced_refresh_waits_for_the_refresh_triggered_during_account_collection(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // The single POST belongs to the account-collection step below. Forcing must not
+        // fire a second one Akahu would decline; it waits for the first to land instead.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        // Stands in for the forced refresh fired by NewJobDataCollector::collectAccounts().
+        $service->refreshAccounts();
+
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
 }

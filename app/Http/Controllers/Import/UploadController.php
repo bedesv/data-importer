@@ -195,6 +195,9 @@ final class UploadController extends Controller
                 ];
                 $errors           = $collector->validate();
                 $importJob        = $collector->getImportJob();
+                // Per-run choice: it is stored on the job, not the configuration, so it never
+                // ends up in the configuration file the user downloads.
+                $importJob->setAkahuForceRefresh($request->boolean('akahu_force_refresh'));
                 $this->repository->saveToDisk($importJob);
 
                 break;

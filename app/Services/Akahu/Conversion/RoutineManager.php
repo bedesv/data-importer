@@ -50,7 +50,7 @@ final class RoutineManager implements RoutineManagerInterface
         $accountMapping                = $configuration->getAccounts();
         $selectedIds                   = array_keys($accountMapping);
 
-        $freshAccounts                 = $this->service->ensureFreshAccounts($selectedIds);
+        $freshAccounts                 = $this->service->ensureFreshAccounts($selectedIds, $this->importJob->getAkahuForceRefresh());
         foreach ($this->service->getRefreshWarnings() as $warning) {
             $this->importJob->conversionStatus->addWarning(0, $warning);
         }

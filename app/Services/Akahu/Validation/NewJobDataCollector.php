@@ -83,8 +83,18 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
         // We don't wait here — RoutineManager::start() will wait if needed.
         // With always_refresh enabled we trigger whenever the cooldown allows; otherwise
         // we also need the staleness heuristic to say the data needs refreshing.
-        $allIds = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
-        if ($service->refreshTriggeredRecently()) {
+        // A forced refresh happens here rather than at conversion, giving Akahu the most
+        // time to answer before the conversion request starts waiting on it.
+        $allIds       = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
+        $forceRefresh = $this->importJob->getAkahuForceRefresh();
+        if ($forceRefresh) {
+            try {
+                $service->refreshAccounts();
+                Log::debug('Akahu: triggered forced account refresh during account collection.');
+            } catch (\Throwable $e) {
+                Log::warning('Akahu: forced refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);
+            }
+        } elseif ($service->refreshTriggeredRecently()) {
             // Akahu declines refreshes that arrive inside the cooldown window, so asking
             // again would only spend a request and leave conversion waiting on a no-op.
             Log::debug('Akahu: a refresh was triggered recently, skipping the early refresh.');

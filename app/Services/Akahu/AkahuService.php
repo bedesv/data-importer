@@ -90,7 +90,7 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    public function ensureFreshAccounts(array $selectedAccountIds): array
+    public function ensureFreshAccounts(array $selectedAccountIds, bool $force = false): array
     {
         $this->refreshWarnings = [];
         // This runs inside the conversion request, so bound the whole operation well
@@ -99,7 +99,7 @@ class AkahuService
         $this->deadline        = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 45));
 
         try {
-            return $this->collectFreshAccounts($selectedAccountIds);
+            return $this->collectFreshAccounts($selectedAccountIds, $force);
         } finally {
             $this->deadline = null;
         }
@@ -119,10 +119,10 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    private function collectFreshAccounts(array $selectedAccountIds): array
+    private function collectFreshAccounts(array $selectedAccountIds, bool $force = false): array
     {
         $accounts      = $this->fetchAccounts();
-        $alwaysRefresh = (bool) config('akahu.always_refresh', true);
+        $alwaysRefresh = $force || (bool) config('akahu.always_refresh', true);
 
         // When always_refresh is disabled, fall back to the staleness heuristic and
         // skip the refresh entirely when the selected accounts are recent enough.
@@ -132,8 +132,9 @@ class AkahuService
 
         // Akahu ignores a refresh that arrives too soon after the previous one. Asking
         // anyway produces a no-op we would then poll on until the deadline, so data from
-        // inside the cooldown window counts as already fresh.
-        if ($this->refreshedSince($accounts, $selectedAccountIds, $this->cooldownStart())) {
+        // inside the cooldown window counts as already fresh. A forced refresh skips this
+        // shortcut: the user asked for new data, so old-but-recent data will not do.
+        if (!$force && $this->refreshedSince($accounts, $selectedAccountIds, $this->cooldownStart())) {
             Log::debug('Akahu: selected accounts were refreshed within the cooldown window, no refresh needed.');
 
             return $accounts;

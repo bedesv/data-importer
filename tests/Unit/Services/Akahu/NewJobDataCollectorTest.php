@@ -206,4 +206,42 @@ class NewJobDataCollectorTest extends TestCase
         $this->assertCount(0, $errors);
         $this->assertCount(1, $collector->getImportJob()->getServiceAccounts());
     }
+    public function test_collect_accounts_forced_refresh_triggers_even_inside_the_cooldown(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('fetchAccounts')
+            ->once()
+            ->andReturn([
+                Account::fromArray([
+                    '_id'      => 'acc-1',
+                    'name'     => 'Cheque',
+                    'currency' => 'NZD',
+                    'status'   => 'active',
+                ]),
+            ]);
+        // A recent trigger normally suppresses the early refresh. The user asked for a
+        // forced one, so the collector asks Akahu anyway and lets it decline if it must.
+        $service->shouldReceive('refreshTriggeredRecently')->andReturn(true);
+        $service->shouldReceive('needsRefresh')->never();
+        $service->shouldReceive('refreshAccounts')->once();
+        app()->instance(AkahuService::class, $service);
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+
+        $job->setAkahuForceRefresh(true);
+
+        $collector = new NewJobDataCollector();
+        $collector->setImportJob($job);
+
+        $errors = $collector->collectAccounts();
+
+        $this->assertCount(0, $errors);
+        $this->assertCount(1, $collector->getImportJob()->getServiceAccounts());
+    }
 }

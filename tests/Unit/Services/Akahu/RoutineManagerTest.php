@@ -36,7 +36,7 @@ class RoutineManagerTest extends TestCase
         ];
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
-        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'])->andReturn($serviceAccounts);
+        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'], false)->andReturn($serviceAccounts);
         $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
@@ -136,7 +136,7 @@ class RoutineManagerTest extends TestCase
         ];
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
-        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1', 'acc-2'])->andReturn($serviceAccounts);
+        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1', 'acc-2'], false)->andReturn($serviceAccounts);
         $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
@@ -202,5 +202,35 @@ class RoutineManagerTest extends TestCase
         $this->assertSame('transfer', $transactions[0]['transactions'][0]['type']);
         $this->assertSame(21, $transactions[0]['transactions'][0]['source_id']);
         $this->assertSame(22, $transactions[0]['transactions'][0]['destination_id']);
+    }
+    public function test_routine_manager_passes_the_forced_refresh_flag_to_the_service(): void
+    {
+        $serviceAccounts = [
+            Account::fromArray([
+                '_id'      => 'acc-1',
+                'name'     => 'Cheque',
+                'currency' => 'NZD',
+                'status'   => 'active',
+            ]),
+        ];
+        $service         = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'], true)->andReturn($serviceAccounts);
+        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
+        $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([]);
+        $service->shouldReceive('fetchPendingTransactions')->andReturn([]);
+        app()->instance(AkahuService::class, $service);
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray([
+            'flow'     => 'akahu',
+            'accounts' => ['acc-1' => 11],
+        ]));
+        $job->setServiceAccounts($serviceAccounts);
+        $job->setAkahuForceRefresh(true);
+
+        $manager = new RoutineManager($job);
+        $manager->start();
     }
 }
