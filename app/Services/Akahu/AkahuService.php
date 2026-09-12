@@ -383,11 +383,19 @@ class AkahuService
 
         $rateLimitRetries = 0;
         while (true) {
+            $options = [
+                'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
+                'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
+            ];
+            // Without this the client's own timeout governs each attempt, so a stalled
+            // Akahu holds the caller far past the deadline it asked us to respect.
+            $timeout = $this->requestTimeout();
+            if (null !== $timeout) {
+                $options['timeout'] = $timeout;
+            }
+
             try {
-                $response = $this->client->request($method, ltrim($path, '/'), [
-                    'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
-                    'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
-                ]);
+                $response = $this->client->request($method, ltrim($path, '/'), $options);
                 break;
             } catch (RequestException $e) {
                 $response = $e->getResponse();
@@ -505,6 +513,21 @@ class AkahuService
             'status' => $statusCode,
             'body'   => substr($body, 0, 1000),
         ]);
+    }
+
+    /**
+     * How long a single HTTP attempt may take, or null when no deadline is in force. Never
+     * returns zero: Guzzle reads that as "no timeout", and a doomed attempt should still be
+     * given the second it needs to fail honestly rather than hang.
+     */
+    private function requestTimeout(): ?float
+    {
+        if (!$this->deadline instanceof CarbonImmutable) {
+            return null;
+        }
+        $remaining = (float) CarbonImmutable::now()->diffInSeconds($this->deadline, false);
+
+        return max(1.0, min((float) config('akahu.connection_timeout', 30), $remaining));
     }
 
     private function pause(int $seconds): void

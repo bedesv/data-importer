@@ -818,4 +818,65 @@ class AkahuServiceTest extends TestCase
         $this->assertCount(1, $accounts);
         $this->assertSame([], $sleeps);
     }
+    public function test_early_refresh_trigger_caps_every_http_attempt_at_its_remaining_budget(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        $timeouts = [];
+        $client   = Mockery::mock(ClientInterface::class);
+        // A stalled Akahu would otherwise hold each attempt for the client's own 30s
+        // timeout, which no Retry-After cap can shorten.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(function (string $method, string $path, array $options) use (&$timeouts): bool {
+                $timeouts[] = $options['timeout'] ?? null;
+
+                return 'POST' === $method && 'refresh' === $path;
+            })
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        try {
+            $service->triggerRefreshWithin(3);
+        } catch (ImporterErrorException) {
+            // The decline itself is covered elsewhere; this is about how long it took.
+        }
+
+        $this->assertCount(3, $timeouts);
+        foreach ($timeouts as $timeout) {
+            $this->assertNotNull($timeout);
+            $this->assertGreaterThan(0, $timeout);
+            $this->assertLessThanOrEqual(3, $timeout);
+        }
+    }
+
+    public function test_requests_without_a_deadline_keep_the_client_timeout(): void
+    {
+        config()->set('akahu.connection_timeout', 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        // No deadline installed, so the request must not narrow the client's own timeout.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(function (string $method, string $path, array $options): bool {
+                $this->assertArrayNotHasKey('timeout', $options);
+
+                return true;
+            })
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $service->refreshAccounts();
+    }
 }
