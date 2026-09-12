@@ -9,6 +9,7 @@ use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Validation\NewJobDataCollector;
 use App\Services\Shared\Configuration\Configuration;
+use Carbon\CarbonImmutable;
 use Mockery;
 use Tests\TestCase;
 
@@ -16,6 +17,7 @@ class NewJobDataCollectorTest extends TestCase
 {
     protected function tearDown(): void
     {
+        CarbonImmutable::setTestNow();
         Mockery::close();
         parent::tearDown();
     }
@@ -287,5 +289,47 @@ class NewJobDataCollectorTest extends TestCase
 
         $this->assertCount(0, $errors);
         $this->assertNull($collector->getImportJob()->getAkahuForcedRefreshAt());
+    }
+    public function test_forced_trigger_marker_keeps_sub_second_precision(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+
+        // An account refreshed earlier in the same second as the trigger must still count
+        // as older than it. A marker rounded down to the second would accept it as fresh.
+        $triggeredAt = CarbonImmutable::parse('2026-09-12T21:30:45.700000+12:00');
+        CarbonImmutable::setTestNow($triggeredAt);
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('fetchAccounts')
+            ->once()
+            ->andReturn([
+                Account::fromArray([
+                    '_id'      => 'acc-1',
+                    'name'     => 'Cheque',
+                    'currency' => 'NZD',
+                    'status'   => 'active',
+                ]),
+            ]);
+        $service->shouldReceive('triggerRefreshWithin')->once();
+        app()->instance(AkahuService::class, $service);
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+        $job->setAkahuForceRefresh(true);
+
+        $collector = new NewJobDataCollector();
+        $collector->setImportJob($job);
+        $collector->collectAccounts();
+
+        $stored = $collector->getImportJob()->getAkahuForcedRefreshAt();
+
+        $this->assertNotNull($stored);
+        $this->assertTrue(
+            CarbonImmutable::parse($stored)->equalTo($triggeredAt),
+            sprintf('Stored marker "%s" lost precision against %s', $stored, $triggeredAt->format('H:i:s.u'))
+        );
     }
 }

@@ -21,6 +21,9 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
     // would otherwise honour. Conversion retries and warns if this one does not land.
     private const int EARLY_TRIGGER_BUDGET_SECONDS = 3;
 
+    /** ISO 8601 with microseconds, so the conversion-time comparison stays exact. */
+    private const string TRIGGER_TIME_FORMAT = 'Y-m-d\TH:i:s.uP';
+
     public array $input = [];
     private ImportJob $importJob;
     private ImportJobRepository $repository;
@@ -99,8 +102,11 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
             try {
                 $triggeredAt = CarbonImmutable::now();
                 $service->triggerRefreshWithin(self::EARLY_TRIGGER_BUDGET_SECONDS);
-                // Only a trigger that reached Akahu is worth waiting on at conversion.
-                $this->importJob->setAkahuForcedRefreshAt($triggeredAt->toIso8601String());
+                // Only a trigger that reached Akahu is worth waiting on at conversion, and
+                // it keeps its fractional seconds: rounded down to the second, an account
+                // refreshed earlier in that same second would read as newer than the
+                // trigger and settle the wait immediately.
+                $this->importJob->setAkahuForcedRefreshAt($triggeredAt->format(self::TRIGGER_TIME_FORMAT));
                 Log::debug('Akahu: triggered forced account refresh during account collection.');
             } catch (\Throwable $e) {
                 Log::warning('Akahu: forced refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);

@@ -216,11 +216,10 @@ class RoutineManagerTest extends TestCase
         ];
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
-        // Stored as an ISO 8601 string on the job, so sub-second precision is not kept.
-        $triggeredAt     = CarbonImmutable::now()->subMinutes(2)->startOfSecond();
+        $triggeredAt     = CarbonImmutable::parse('2026-09-12T21:30:45.700000+12:00');
         $service->shouldReceive('ensureFreshAccounts')
             ->once()
-            ->with(['acc-1'], true, Mockery::on(fn (?CarbonImmutable $at): bool => $at instanceof CarbonImmutable && $at->toIso8601String() === $triggeredAt->toIso8601String()))
+            ->with(['acc-1'], true, Mockery::on(fn (?CarbonImmutable $at): bool => $at instanceof CarbonImmutable && $at->equalTo($triggeredAt)))
             ->andReturn($serviceAccounts);
         $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([]);
@@ -235,7 +234,9 @@ class RoutineManagerTest extends TestCase
         ]));
         $job->setServiceAccounts($serviceAccounts);
         $job->setAkahuForceRefresh(true);
-        $job->setAkahuForcedRefreshAt($triggeredAt->toIso8601String());
+        // Fractional seconds must survive the job, or conversion compares against a
+        // trigger time earlier than the one that actually fired.
+        $job->setAkahuForcedRefreshAt($triggeredAt->format('Y-m-d\TH:i:s.uP'));
 
         $manager = new RoutineManager($job);
         $manager->start();
