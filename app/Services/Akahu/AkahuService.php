@@ -90,7 +90,7 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    public function ensureFreshAccounts(array $selectedAccountIds, bool $force = false): array
+    public function ensureFreshAccounts(array $selectedAccountIds, bool $force = false, ?CarbonImmutable $forcedTriggerAt = null): array
     {
         $this->refreshWarnings = [];
         // This runs inside the conversion request, so bound the whole operation well
@@ -99,7 +99,7 @@ class AkahuService
         $this->deadline        = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 45));
 
         try {
-            return $this->collectFreshAccounts($selectedAccountIds, $force);
+            return $this->collectFreshAccounts($selectedAccountIds, $force, $forcedTriggerAt);
         } finally {
             $this->deadline = null;
         }
@@ -119,7 +119,7 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    private function collectFreshAccounts(array $selectedAccountIds, bool $force = false): array
+    private function collectFreshAccounts(array $selectedAccountIds, bool $force = false, ?CarbonImmutable $forcedTriggerAt = null): array
     {
         $accounts      = $this->fetchAccounts();
         $alwaysRefresh = $force || (bool) config('akahu.always_refresh', true);
@@ -140,7 +140,10 @@ class AkahuService
             return $accounts;
         }
 
-        $triggeredAt   = $this->lastRefreshTriggeredAt();
+        // A forced run may only wait on a trigger it fired itself: the cooldown marker is
+        // shared between imports, so trusting it here would settle against an older run's
+        // refresh and hand back the stale data the user forced a refresh to avoid.
+        $triggeredAt   = $force ? $forcedTriggerAt : $this->lastRefreshTriggeredAt();
         if ($triggeredAt instanceof CarbonImmutable && $triggeredAt->gte($this->cooldownStart())) {
             // A refresh fired during account collection has not landed yet. Wait for that
             // one instead of asking Akahu for a second refresh it would only decline.

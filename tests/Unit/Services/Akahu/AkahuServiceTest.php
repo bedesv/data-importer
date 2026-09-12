@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\Akahu;
 use App\Exceptions\ImporterErrorException;
 use App\Services\Akahu\AkahuService;
 use App\Services\Shared\Configuration\Configuration;
+use Carbon\CarbonImmutable;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Psr7\Request;
@@ -678,11 +679,81 @@ class AkahuServiceTest extends TestCase
         $service = $this->makeService($client, $sleeps);
 
         // Stands in for the forced refresh fired by NewJobDataCollector::collectAccounts().
+        $triggeredAt = CarbonImmutable::now();
         $service->refreshAccounts();
 
-        $accounts = $service->ensureFreshAccounts(['acc-123'], true);
+        $accounts    = $service->ensureFreshAccounts(['acc-123'], true, $triggeredAt);
 
         $this->assertCount(1, $accounts);
         $this->assertSame([], $service->getRefreshWarnings());
+    }
+    public function test_forced_refresh_ignores_an_earlier_trigger_when_this_run_never_fired_one(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Two POSTs: the earlier run's, then this run's. Without the second one the wait
+        // below would settle against a trigger this run never made and quietly hand back
+        // the data Akahu already held.
+        $client
+            ->shouldReceive('request')
+            ->twice()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(10)->toIso8601String()));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        // An earlier import's refresh, still inside the cooldown window.
+        $service->refreshAccounts();
+
+        // This run's forced trigger failed, so it has no timestamp to wait on.
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true, null);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+
+    public function test_forced_refresh_warns_when_its_own_retry_is_declined(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        // Akahu turns the retry down (initial attempt plus both retries). The user asked
+        // for fresh data and is not getting it, so the import must say so rather than
+        // settle silently.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '1'], 'rate limited')
+            ));
+
+        $sleeps   = [];
+        $service  = $this->makeService($client, $sleeps);
+
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true, null);
+
+        $this->assertCount(1, $accounts);
+        $this->assertCount(1, $service->getRefreshWarnings());
+        $this->assertStringContainsString('declined the refresh request', $service->getRefreshWarnings()[0]);
     }
 }

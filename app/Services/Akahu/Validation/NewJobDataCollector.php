@@ -10,6 +10,7 @@ use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Credentials;
 use App\Services\Shared\Configuration\Configuration;
 use App\Services\Shared\Validation\NewJobDataCollectorInterface;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\MessageBag;
 
@@ -88,8 +89,13 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
         $allIds       = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
         $forceRefresh = $this->importJob->getAkahuForceRefresh();
         if ($forceRefresh) {
+            $this->importJob->setAkahuForcedRefreshAt(null);
+
             try {
+                $triggeredAt = CarbonImmutable::now();
                 $service->refreshAccounts();
+                // Only a trigger that reached Akahu is worth waiting on at conversion.
+                $this->importJob->setAkahuForcedRefreshAt($triggeredAt->toIso8601String());
                 Log::debug('Akahu: triggered forced account refresh during account collection.');
             } catch (\Throwable $e) {
                 Log::warning('Akahu: forced refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);

@@ -243,5 +243,43 @@ class NewJobDataCollectorTest extends TestCase
 
         $this->assertCount(0, $errors);
         $this->assertCount(1, $collector->getImportJob()->getServiceAccounts());
+        // Conversion waits on this timestamp, so a successful trigger must record one.
+        $this->assertNotNull($collector->getImportJob()->getAkahuForcedRefreshAt());
+    }
+
+    public function test_collect_accounts_records_no_trigger_time_when_the_forced_refresh_fails(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('fetchAccounts')
+            ->once()
+            ->andReturn([
+                Account::fromArray([
+                    '_id'      => 'acc-1',
+                    'name'     => 'Cheque',
+                    'currency' => 'NZD',
+                    'status'   => 'active',
+                ]),
+            ]);
+        // Akahu refused. Leaving the trigger time unset is what makes conversion retry
+        // instead of settling against some earlier import's refresh.
+        $service->shouldReceive('refreshAccounts')->once()->andThrow(new \RuntimeException('declined'));
+        app()->instance(AkahuService::class, $service);
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+        $job->setAkahuForceRefresh(true);
+
+        $collector = new NewJobDataCollector();
+        $collector->setImportJob($job);
+
+        $errors = $collector->collectAccounts();
+
+        $this->assertCount(0, $errors);
+        $this->assertNull($collector->getImportJob()->getAkahuForcedRefreshAt());
     }
 }

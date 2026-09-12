@@ -80,9 +80,12 @@ class ConfigurationAndSerializationTest extends TestCase
         $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
         $job->setAkahuForceRefresh(true);
 
+        $job->setAkahuForcedRefreshAt('2026-09-12T10:00:00+12:00');
+
         $restored = ImportJob::fromArray($job->toArray());
 
         $this->assertTrue($restored->getAkahuForceRefresh());
+        $this->assertSame('2026-09-12T10:00:00+12:00', $restored->getAkahuForcedRefreshAt());
     }
 
     public function test_akahu_force_refresh_stays_out_of_the_downloadable_configuration(): void
