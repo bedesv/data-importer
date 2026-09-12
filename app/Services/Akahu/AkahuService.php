@@ -411,7 +411,12 @@ class AkahuService
                 if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES && !$this->deadlineHasPassed()) {
                     ++$rateLimitRetries;
                     $this->pause($this->retryAfterSeconds($response->getHeaderLine('Retry-After')));
-                    continue;
+
+                    // The wait itself can spend what was left, so the budget is worth
+                    // checking on both sides of it.
+                    if (!$this->deadlineHasPassed()) {
+                        continue;
+                    }
                 }
 
                 throw new ImporterErrorException(sprintf('Akahu API request failed with HTTP %d.', $response->getStatusCode()), 0, $e);

@@ -27,6 +27,7 @@ class AkahuServiceTest extends TestCase
 
     protected function tearDown(): void
     {
+        CarbonImmutable::setTestNow();
         Mockery::close();
         parent::tearDown();
     }
@@ -904,5 +905,46 @@ class AkahuServiceTest extends TestCase
 
         // A spent budget still buys one honest attempt; it buys no retries.
         $service->triggerRefreshWithin(0);
+    }
+    public function test_retry_is_abandoned_when_the_retry_after_pause_exhausts_the_budget(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-12T21:30:00+12:00'));
+
+        $client = Mockery::mock(ClientInterface::class);
+        // One attempt: the 429 arrives with budget left, but the wait it asks for uses all
+        // of it. Retrying after that wait would overrun the bound the caller set.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = new AkahuService($client);
+        $service->setConfiguration(Configuration::fromArray([
+            'flow'             => 'akahu',
+            'akahu_app_token'  => 'app-token',
+            'akahu_user_token' => 'user-token',
+        ]));
+        // Unlike the shared handler, this one moves the clock, which is the whole point.
+        $service->setSleepHandler(static function (int $seconds) use (&$sleeps): void {
+            $sleeps[] = $seconds;
+            CarbonImmutable::setTestNow(CarbonImmutable::now()->addSeconds($seconds));
+        });
+
+        $this->expectException(ImporterErrorException::class);
+
+        try {
+            $service->triggerRefreshWithin(3);
+        } finally {
+            $this->assertSame([3], $sleeps);
+        }
     }
 }
