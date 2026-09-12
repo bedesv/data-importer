@@ -879,4 +879,30 @@ class AkahuServiceTest extends TestCase
 
         $service->refreshAccounts();
     }
+    public function test_rate_limited_request_stops_retrying_once_the_deadline_has_passed(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        // One attempt only. Retrying past the deadline would spend the budget the caller
+        // set, which is the whole point of handing this trigger a short one.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $this->expectException(ImporterErrorException::class);
+
+        // A spent budget still buys one honest attempt; it buys no retries.
+        $service->triggerRefreshWithin(0);
+    }
 }

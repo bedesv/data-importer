@@ -404,7 +404,11 @@ class AkahuService
                 }
 
                 $this->logHttpFailure($method, $path, $response->getStatusCode(), (string) $response->getBody());
-                if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES) {
+                // A retry is optional; the deadline is not. Once it has passed, the caller
+                // is out of time and another attempt would only spend budget it no longer
+                // has. The first attempt is always made, however spent the budget already
+                // is, so callers still get one honest answer.
+                if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES && !$this->deadlineHasPassed()) {
                     ++$rateLimitRetries;
                     $this->pause($this->retryAfterSeconds($response->getHeaderLine('Retry-After')));
                     continue;
@@ -513,6 +517,11 @@ class AkahuService
             'status' => $statusCode,
             'body'   => substr($body, 0, 1000),
         ]);
+    }
+
+    private function deadlineHasPassed(): bool
+    {
+        return $this->deadline instanceof CarbonImmutable && CarbonImmutable::now()->gte($this->deadline);
     }
 
     /**
