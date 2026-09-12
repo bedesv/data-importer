@@ -321,6 +321,25 @@ class AkahuService
         $this->rememberRefreshTrigger();
     }
 
+    /**
+     * Fire a refresh under a short budget. The eager trigger runs inside the request that
+     * renders the configuration page, and a rate-limited attempt would otherwise spend two
+     * Retry-After waits of up to a minute each holding that page open. Failing fast is
+     * cheap here: conversion retries the refresh and warns if that is declined too.
+     *
+     * @throws ImporterErrorException
+     */
+    public function triggerRefreshWithin(int $seconds): void
+    {
+        $this->deadline = CarbonImmutable::now()->addSeconds(max(0, $seconds));
+
+        try {
+            $this->refreshAccounts();
+        } finally {
+            $this->deadline = null;
+        }
+    }
+
     private function lastRefreshTriggeredAt(): ?CarbonImmutable
     {
         $value = Cache::get($this->refreshTriggerCacheKey());

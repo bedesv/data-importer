@@ -190,7 +190,10 @@ class NewJobDataCollectorTest extends TestCase
         // and never consults the staleness heuristic.
         $service->shouldReceive('refreshTriggeredRecently')->once()->andReturn(false);
         $service->shouldReceive('needsRefresh')->never();
-        $service->shouldReceive('refreshAccounts')->once();
+        // Bounded: this runs inside the request that renders the configuration page.
+        $service->shouldReceive('triggerRefreshWithin')
+            ->once()
+            ->with(Mockery::on(fn (int $seconds): bool => $seconds > 0 && $seconds <= 5));
         app()->instance(AkahuService::class, $service);
 
         $job           = ImportJob::createNew();
@@ -227,7 +230,10 @@ class NewJobDataCollectorTest extends TestCase
         // forced one, so the collector asks Akahu anyway and lets it decline if it must.
         $service->shouldReceive('refreshTriggeredRecently')->andReturn(true);
         $service->shouldReceive('needsRefresh')->never();
-        $service->shouldReceive('refreshAccounts')->once();
+        // Bounded: this runs inside the request that renders the configuration page.
+        $service->shouldReceive('triggerRefreshWithin')
+            ->once()
+            ->with(Mockery::on(fn (int $seconds): bool => $seconds > 0 && $seconds <= 5));
         app()->instance(AkahuService::class, $service);
 
         $job = ImportJob::createNew();
@@ -266,7 +272,7 @@ class NewJobDataCollectorTest extends TestCase
             ]);
         // Akahu refused. Leaving the trigger time unset is what makes conversion retry
         // instead of settling against some earlier import's refresh.
-        $service->shouldReceive('refreshAccounts')->once()->andThrow(new \RuntimeException('declined'));
+        $service->shouldReceive('triggerRefreshWithin')->once()->andThrow(new \RuntimeException('declined'));
         app()->instance(AkahuService::class, $service);
 
         $job = ImportJob::createNew();

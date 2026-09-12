@@ -16,6 +16,11 @@ use Illuminate\Support\MessageBag;
 
 final class NewJobDataCollector implements NewJobDataCollectorInterface
 {
+    // The eager trigger runs inside the request that renders the configuration page, so a
+    // rate-limited attempt gets seconds, not the two full Retry-After waits requestJson()
+    // would otherwise honour. Conversion retries and warns if this one does not land.
+    private const int EARLY_TRIGGER_BUDGET_SECONDS = 3;
+
     public array $input = [];
     private ImportJob $importJob;
     private ImportJobRepository $repository;
@@ -93,7 +98,7 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
 
             try {
                 $triggeredAt = CarbonImmutable::now();
-                $service->refreshAccounts();
+                $service->triggerRefreshWithin(self::EARLY_TRIGGER_BUDGET_SECONDS);
                 // Only a trigger that reached Akahu is worth waiting on at conversion.
                 $this->importJob->setAkahuForcedRefreshAt($triggeredAt->toIso8601String());
                 Log::debug('Akahu: triggered forced account refresh during account collection.');
@@ -106,7 +111,7 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
             Log::debug('Akahu: a refresh was triggered recently, skipping the early refresh.');
         } elseif ((bool) config('akahu.always_refresh', true) || $service->needsRefresh($accounts, $allIds)) {
             try {
-                $service->refreshAccounts();
+                $service->triggerRefreshWithin(self::EARLY_TRIGGER_BUDGET_SECONDS);
                 Log::debug('Akahu: triggered early account refresh during account collection.');
             } catch (\Throwable $e) {
                 Log::warning('Akahu: early refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);

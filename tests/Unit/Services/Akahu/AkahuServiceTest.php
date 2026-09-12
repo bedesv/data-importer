@@ -756,4 +756,66 @@ class AkahuServiceTest extends TestCase
         $this->assertCount(1, $service->getRefreshWarnings());
         $this->assertStringContainsString('declined the refresh request', $service->getRefreshWarnings()[0]);
     }
+    public function test_early_refresh_trigger_never_sleeps_past_its_own_budget(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Retry-After asks for a minute each time. This trigger runs inside the request
+        // that renders the configuration page, so it must not spend that budget: the
+        // conversion step retries and warns for us.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $this->expectException(ImporterErrorException::class);
+
+        try {
+            $service->triggerRefreshWithin(2);
+        } finally {
+            $this->assertNotEmpty($sleeps);
+            foreach ($sleeps as $seconds) {
+                $this->assertLessThanOrEqual(2, $seconds);
+            }
+        }
+    }
+
+    public function test_early_refresh_trigger_clears_its_budget_for_later_calls(): void
+    {
+        $this->applyRefreshConfig(waitTimeoutSeconds: 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        // One fetch to collect, one to confirm the trigger landed.
+        $client
+            ->shouldReceive('request')
+            ->twice()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps      = [];
+        $service     = $this->makeService($client, $sleeps);
+
+        $triggeredAt = CarbonImmutable::now();
+        $service->triggerRefreshWithin(2);
+
+        // The short budget belongs to the trigger alone; conversion gets its own.
+        $accounts    = $service->ensureFreshAccounts(['acc-123'], true, $triggeredAt);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $sleeps);
+    }
 }
