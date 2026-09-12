@@ -90,7 +90,7 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    public function ensureFreshAccounts(array $selectedAccountIds): array
+    public function ensureFreshAccounts(array $selectedAccountIds, bool $force = false, ?CarbonImmutable $forcedTriggerAt = null): array
     {
         $this->refreshWarnings = [];
         // This runs inside the conversion request, so bound the whole operation well
@@ -99,7 +99,7 @@ class AkahuService
         $this->deadline        = CarbonImmutable::now()->addSeconds((int) config('akahu.refresh_wait_timeout_seconds', 45));
 
         try {
-            return $this->collectFreshAccounts($selectedAccountIds);
+            return $this->collectFreshAccounts($selectedAccountIds, $force, $forcedTriggerAt);
         } finally {
             $this->deadline = null;
         }
@@ -119,10 +119,10 @@ class AkahuService
      * @return array<Account>
      * @throws ImporterErrorException
      */
-    private function collectFreshAccounts(array $selectedAccountIds): array
+    private function collectFreshAccounts(array $selectedAccountIds, bool $force = false, ?CarbonImmutable $forcedTriggerAt = null): array
     {
         $accounts      = $this->fetchAccounts();
-        $alwaysRefresh = (bool) config('akahu.always_refresh', true);
+        $alwaysRefresh = $force || (bool) config('akahu.always_refresh', true);
 
         // When always_refresh is disabled, fall back to the staleness heuristic and
         // skip the refresh entirely when the selected accounts are recent enough.
@@ -132,14 +132,18 @@ class AkahuService
 
         // Akahu ignores a refresh that arrives too soon after the previous one. Asking
         // anyway produces a no-op we would then poll on until the deadline, so data from
-        // inside the cooldown window counts as already fresh.
-        if ($this->refreshedSince($accounts, $selectedAccountIds, $this->cooldownStart())) {
+        // inside the cooldown window counts as already fresh. A forced refresh skips this
+        // shortcut: the user asked for new data, so old-but-recent data will not do.
+        if (!$force && $this->refreshedSince($accounts, $selectedAccountIds, $this->cooldownStart())) {
             Log::debug('Akahu: selected accounts were refreshed within the cooldown window, no refresh needed.');
 
             return $accounts;
         }
 
-        $triggeredAt   = $this->lastRefreshTriggeredAt();
+        // A forced run may only wait on a trigger it fired itself: the cooldown marker is
+        // shared between imports, so trusting it here would settle against an older run's
+        // refresh and hand back the stale data the user forced a refresh to avoid.
+        $triggeredAt   = $force ? $forcedTriggerAt : $this->lastRefreshTriggeredAt();
         if ($triggeredAt instanceof CarbonImmutable && $triggeredAt->gte($this->cooldownStart())) {
             // A refresh fired during account collection has not landed yet. Wait for that
             // one instead of asking Akahu for a second refresh it would only decline.
@@ -317,6 +321,25 @@ class AkahuService
         $this->rememberRefreshTrigger();
     }
 
+    /**
+     * Fire a refresh under a short budget. The eager trigger runs inside the request that
+     * renders the configuration page, and a rate-limited attempt would otherwise spend two
+     * Retry-After waits of up to a minute each holding that page open. Failing fast is
+     * cheap here: conversion retries the refresh and warns if that is declined too.
+     *
+     * @throws ImporterErrorException
+     */
+    public function triggerRefreshWithin(int $seconds): void
+    {
+        $this->deadline = CarbonImmutable::now()->addSeconds(max(0, $seconds));
+
+        try {
+            $this->refreshAccounts();
+        } finally {
+            $this->deadline = null;
+        }
+    }
+
     private function lastRefreshTriggeredAt(): ?CarbonImmutable
     {
         $value = Cache::get($this->refreshTriggerCacheKey());
@@ -360,11 +383,19 @@ class AkahuService
 
         $rateLimitRetries = 0;
         while (true) {
+            $options = [
+                'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
+                'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
+            ];
+            // Without this the client's own timeout governs each attempt, so a stalled
+            // Akahu holds the caller far past the deadline it asked us to respect.
+            $timeout = $this->requestTimeout();
+            if (null !== $timeout) {
+                $options['timeout'] = $timeout;
+            }
+
             try {
-                $response = $this->client->request($method, ltrim($path, '/'), [
-                    'headers' => $this->getHeaders($credentials->appToken, $credentials->userToken),
-                    'query'   => array_filter($query, static fn ($value): bool => null !== $value && '' !== $value),
-                ]);
+                $response = $this->client->request($method, ltrim($path, '/'), $options);
                 break;
             } catch (RequestException $e) {
                 $response = $e->getResponse();
@@ -373,10 +404,19 @@ class AkahuService
                 }
 
                 $this->logHttpFailure($method, $path, $response->getStatusCode(), (string) $response->getBody());
-                if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES) {
+                // A retry is optional; the deadline is not. Once it has passed, the caller
+                // is out of time and another attempt would only spend budget it no longer
+                // has. The first attempt is always made, however spent the budget already
+                // is, so callers still get one honest answer.
+                if (429 === $response->getStatusCode() && $rateLimitRetries < self::MAX_RATE_LIMIT_RETRIES && !$this->deadlineHasPassed()) {
                     ++$rateLimitRetries;
                     $this->pause($this->retryAfterSeconds($response->getHeaderLine('Retry-After')));
-                    continue;
+
+                    // The wait itself can spend what was left, so the budget is worth
+                    // checking on both sides of it.
+                    if (!$this->deadlineHasPassed()) {
+                        continue;
+                    }
                 }
 
                 throw new ImporterErrorException(sprintf('Akahu API request failed with HTTP %d.', $response->getStatusCode()), 0, $e);
@@ -482,6 +522,26 @@ class AkahuService
             'status' => $statusCode,
             'body'   => substr($body, 0, 1000),
         ]);
+    }
+
+    private function deadlineHasPassed(): bool
+    {
+        return $this->deadline instanceof CarbonImmutable && CarbonImmutable::now()->gte($this->deadline);
+    }
+
+    /**
+     * How long a single HTTP attempt may take, or null when no deadline is in force. Never
+     * returns zero: Guzzle reads that as "no timeout", and a doomed attempt should still be
+     * given the second it needs to fail honestly rather than hang.
+     */
+    private function requestTimeout(): ?float
+    {
+        if (!$this->deadline instanceof CarbonImmutable) {
+            return null;
+        }
+        $remaining = (float) CarbonImmutable::now()->diffInSeconds($this->deadline, false);
+
+        return max(1.0, min((float) config('akahu.connection_timeout', 30), $remaining));
     }
 
     private function pause(int $seconds): void

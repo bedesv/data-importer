@@ -10,11 +10,20 @@ use App\Services\Akahu\AkahuService;
 use App\Services\Akahu\Credentials;
 use App\Services\Shared\Configuration\Configuration;
 use App\Services\Shared\Validation\NewJobDataCollectorInterface;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\MessageBag;
 
 final class NewJobDataCollector implements NewJobDataCollectorInterface
 {
+    // The eager trigger runs inside the request that renders the configuration page, so a
+    // rate-limited attempt gets seconds, not the two full Retry-After waits requestJson()
+    // would otherwise honour. Conversion retries and warns if this one does not land.
+    private const int EARLY_TRIGGER_BUDGET_SECONDS = 3;
+
+    /** ISO 8601 with microseconds, so the conversion-time comparison stays exact. */
+    private const string TRIGGER_TIME_FORMAT = 'Y-m-d\TH:i:s.uP';
+
     public array $input = [];
     private ImportJob $importJob;
     private ImportJobRepository $repository;
@@ -83,14 +92,32 @@ final class NewJobDataCollector implements NewJobDataCollectorInterface
         // We don't wait here — RoutineManager::start() will wait if needed.
         // With always_refresh enabled we trigger whenever the cooldown allows; otherwise
         // we also need the staleness heuristic to say the data needs refreshing.
-        $allIds = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
-        if ($service->refreshTriggeredRecently()) {
+        // A forced refresh happens here rather than at conversion, giving Akahu the most
+        // time to answer before the conversion request starts waiting on it.
+        $allIds       = array_map(static fn ($a) => $a->getIdentifier(), $accounts);
+        $forceRefresh = $this->importJob->getAkahuForceRefresh();
+        if ($forceRefresh) {
+            $this->importJob->setAkahuForcedRefreshAt(null);
+
+            try {
+                $triggeredAt = CarbonImmutable::now();
+                $service->triggerRefreshWithin(self::EARLY_TRIGGER_BUDGET_SECONDS);
+                // Only a trigger that reached Akahu is worth waiting on at conversion, and
+                // it keeps its fractional seconds: rounded down to the second, an account
+                // refreshed earlier in that same second would read as newer than the
+                // trigger and settle the wait immediately.
+                $this->importJob->setAkahuForcedRefreshAt($triggeredAt->format(self::TRIGGER_TIME_FORMAT));
+                Log::debug('Akahu: triggered forced account refresh during account collection.');
+            } catch (\Throwable $e) {
+                Log::warning('Akahu: forced refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);
+            }
+        } elseif ($service->refreshTriggeredRecently()) {
             // Akahu declines refreshes that arrive inside the cooldown window, so asking
             // again would only spend a request and leave conversion waiting on a no-op.
             Log::debug('Akahu: a refresh was triggered recently, skipping the early refresh.');
         } elseif ((bool) config('akahu.always_refresh', true) || $service->needsRefresh($accounts, $allIds)) {
             try {
-                $service->refreshAccounts();
+                $service->triggerRefreshWithin(self::EARLY_TRIGGER_BUDGET_SECONDS);
                 Log::debug('Akahu: triggered early account refresh during account collection.');
             } catch (\Throwable $e) {
                 Log::warning('Akahu: early refresh trigger failed, will retry at conversion.', ['error' => $e->getMessage()]);

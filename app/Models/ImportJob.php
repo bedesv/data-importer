@@ -77,6 +77,12 @@ final class ImportJob implements Arrayable
     private array $currencies                    = [];
     private array $serviceAccounts               = [];
     private array $authenticationDetails         = [];
+    // Per-run Akahu choice, deliberately kept off Configuration so it never lands in the
+    // configuration file the user downloads and re-uses.
+    private bool  $akahuForceRefresh             = false;
+    // When this run's forced refresh actually reached Akahu. Null means it did not, which
+    // tells conversion to retry rather than wait on some earlier import's refresh.
+    private ?string $akahuForcedRefreshAt        = null;
 
     public static function createNew(): self
     {
@@ -111,6 +117,9 @@ final class ImportJob implements Arrayable
         $importJob->importableFileString  = $array['importable_file_string'];
         $importJob->authenticationDetails = $array['authentication_details'];
         $importJob->sophtronInstitutions  = $array['sophtron_institutions'];
+        // Jobs written to disk before this flag existed restore without it.
+        $importJob->akahuForceRefresh     = (bool) ($array['akahu_force_refresh'] ?? false);
+        $importJob->akahuForcedRefreshAt  = $array['akahu_forced_refresh_at'] ?? null;
 
         // only create configuration object when there is configuration to be parsed.
         $importJob->configuration         = null;
@@ -189,6 +198,8 @@ final class ImportJob implements Arrayable
             'configuration_string'   => $this->configurationString,
             'sophtron_institutions'  => $this->sophtronInstitutions,
             'authentication_details' => $this->authenticationDetails,
+            'akahu_force_refresh'    => $this->akahuForceRefresh,
+            'akahu_forced_refresh_at' => $this->akahuForcedRefreshAt,
             'importable_file_string' => $this->importableFileString,
             'configuration'          => null === $this->configuration ? [] : $this->configuration->toArray(),
             'conversion_status'      => $this->conversionStatus->toArray(),
@@ -347,6 +358,26 @@ final class ImportJob implements Arrayable
     {
         Log::debug(sprintf('Initialized is now set to: %s', var_export($initialized, true)));
         $this->initialized = $initialized;
+    }
+
+    public function getAkahuForceRefresh(): bool
+    {
+        return $this->akahuForceRefresh;
+    }
+
+    public function setAkahuForceRefresh(bool $akahuForceRefresh): void
+    {
+        $this->akahuForceRefresh = $akahuForceRefresh;
+    }
+
+    public function getAkahuForcedRefreshAt(): ?string
+    {
+        return $this->akahuForcedRefreshAt;
+    }
+
+    public function setAkahuForcedRefreshAt(?string $akahuForcedRefreshAt): void
+    {
+        $this->akahuForcedRefreshAt = $akahuForcedRefreshAt;
     }
 
     public function getAuthenticationDetails(): array

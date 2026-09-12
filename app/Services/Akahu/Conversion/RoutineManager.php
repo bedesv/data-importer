@@ -12,6 +12,7 @@ use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\Transaction;
 use App\Services\Shared\Conversion\CreatesAccounts;
 use App\Services\Shared\Conversion\RoutineManagerInterface;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Override;
 
@@ -50,7 +51,12 @@ final class RoutineManager implements RoutineManagerInterface
         $accountMapping                = $configuration->getAccounts();
         $selectedIds                   = array_keys($accountMapping);
 
-        $freshAccounts                 = $this->service->ensureFreshAccounts($selectedIds);
+        $forcedTriggerAt               = $this->importJob->getAkahuForcedRefreshAt();
+        $freshAccounts                 = $this->service->ensureFreshAccounts(
+            $selectedIds,
+            $this->importJob->getAkahuForceRefresh(),
+            null === $forcedTriggerAt ? null : CarbonImmutable::parse($forcedTriggerAt)
+        );
         foreach ($this->service->getRefreshWarnings() as $warning) {
             $this->importJob->conversionStatus->addWarning(0, $warning);
         }

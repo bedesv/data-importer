@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\Akahu;
 use App\Exceptions\ImporterErrorException;
 use App\Services\Akahu\AkahuService;
 use App\Services\Shared\Configuration\Configuration;
+use Carbon\CarbonImmutable;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Psr7\Request;
@@ -26,6 +27,7 @@ class AkahuServiceTest extends TestCase
 
     protected function tearDown(): void
     {
+        CarbonImmutable::setTestNow();
         Mockery::close();
         parent::tearDown();
     }
@@ -617,5 +619,332 @@ class AkahuServiceTest extends TestCase
         $this->expectExceptionMessage('Akahu API request failed with HTTP 500.');
 
         $service->fetchAccounts();
+    }
+
+    public function test_ensure_fresh_accounts_forced_refresh_ignores_the_cooldown_window(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Data from inside the cooldown window normally counts as fresh. A forced refresh
+        // must ask Akahu anyway and then wait for that answer to land.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps   = [];
+        $service  = $this->makeService($client, $sleeps);
+
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+
+    public function test_ensure_fresh_accounts_forced_refresh_waits_for_the_refresh_triggered_during_account_collection(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // The single POST belongs to the account-collection step below. Forcing must not
+        // fire a second one Akahu would decline; it waits for the first to land instead.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        // Stands in for the forced refresh fired by NewJobDataCollector::collectAccounts().
+        $triggeredAt = CarbonImmutable::now();
+        $service->refreshAccounts();
+
+        $accounts    = $service->ensureFreshAccounts(['acc-123'], true, $triggeredAt);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+    public function test_forced_refresh_ignores_an_earlier_trigger_when_this_run_never_fired_one(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Two POSTs: the earlier run's, then this run's. Without the second one the wait
+        // below would settle against a trigger this run never made and quietly hand back
+        // the data Akahu already held.
+        $client
+            ->shouldReceive('request')
+            ->twice()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinute()->toIso8601String()));
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(10)->toIso8601String()));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        // An earlier import's refresh, still inside the cooldown window.
+        $service->refreshAccounts();
+
+        // This run's forced trigger failed, so it has no timestamp to wait on.
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true, null);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+
+    public function test_forced_refresh_warns_when_its_own_retry_is_declined(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->subMinute()->toIso8601String()));
+        // Akahu turns the retry down (initial attempt plus both retries). The user asked
+        // for fresh data and is not getting it, so the import must say so rather than
+        // settle silently.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '1'], 'rate limited')
+            ));
+
+        $sleeps   = [];
+        $service  = $this->makeService($client, $sleeps);
+
+        $accounts = $service->ensureFreshAccounts(['acc-123'], true, null);
+
+        $this->assertCount(1, $accounts);
+        $this->assertCount(1, $service->getRefreshWarnings());
+        $this->assertStringContainsString('declined the refresh request', $service->getRefreshWarnings()[0]);
+    }
+    public function test_early_refresh_trigger_never_sleeps_past_its_own_budget(): void
+    {
+        $this->applyRefreshConfig();
+
+        $client = Mockery::mock(ClientInterface::class);
+        // Retry-After asks for a minute each time. This trigger runs inside the request
+        // that renders the configuration page, so it must not spend that budget: the
+        // conversion step retries and warns for us.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $this->expectException(ImporterErrorException::class);
+
+        try {
+            $service->triggerRefreshWithin(2);
+        } finally {
+            $this->assertNotEmpty($sleeps);
+            foreach ($sleeps as $seconds) {
+                $this->assertLessThanOrEqual(2, $seconds);
+            }
+        }
+    }
+
+    public function test_early_refresh_trigger_clears_its_budget_for_later_calls(): void
+    {
+        $this->applyRefreshConfig(waitTimeoutSeconds: 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+        // One fetch to collect, one to confirm the trigger landed.
+        $client
+            ->shouldReceive('request')
+            ->twice()
+            ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
+            ->andReturn($this->accountsResponse(now()->addMinutes(5)->toIso8601String()));
+
+        $sleeps      = [];
+        $service     = $this->makeService($client, $sleeps);
+
+        $triggeredAt = CarbonImmutable::now();
+        $service->triggerRefreshWithin(2);
+
+        // The short budget belongs to the trigger alone; conversion gets its own.
+        $accounts    = $service->ensureFreshAccounts(['acc-123'], true, $triggeredAt);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([], $sleeps);
+    }
+    public function test_early_refresh_trigger_caps_every_http_attempt_at_its_remaining_budget(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        $timeouts = [];
+        $client   = Mockery::mock(ClientInterface::class);
+        // A stalled Akahu would otherwise hold each attempt for the client's own 30s
+        // timeout, which no Retry-After cap can shorten.
+        $client
+            ->shouldReceive('request')
+            ->times(3)
+            ->withArgs(function (string $method, string $path, array $options) use (&$timeouts): bool {
+                $timeouts[] = $options['timeout'] ?? null;
+
+                return 'POST' === $method && 'refresh' === $path;
+            })
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        try {
+            $service->triggerRefreshWithin(3);
+        } catch (ImporterErrorException) {
+            // The decline itself is covered elsewhere; this is about how long it took.
+        }
+
+        $this->assertCount(3, $timeouts);
+        foreach ($timeouts as $timeout) {
+            $this->assertNotNull($timeout);
+            $this->assertGreaterThan(0, $timeout);
+            $this->assertLessThanOrEqual(3, $timeout);
+        }
+    }
+
+    public function test_requests_without_a_deadline_keep_the_client_timeout(): void
+    {
+        config()->set('akahu.connection_timeout', 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        // No deadline installed, so the request must not narrow the client's own timeout.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(function (string $method, string $path, array $options): bool {
+                $this->assertArrayNotHasKey('timeout', $options);
+
+                return true;
+            })
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $service->refreshAccounts();
+    }
+    public function test_rate_limited_request_stops_retrying_once_the_deadline_has_passed(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        $client = Mockery::mock(ClientInterface::class);
+        // One attempt only. Retrying past the deadline would spend the budget the caller
+        // set, which is the whole point of handing this trigger a short one.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+
+        $this->expectException(ImporterErrorException::class);
+
+        // A spent budget still buys one honest attempt; it buys no retries.
+        $service->triggerRefreshWithin(0);
+    }
+    public function test_retry_is_abandoned_when_the_retry_after_pause_exhausts_the_budget(): void
+    {
+        $this->applyRefreshConfig();
+        config()->set('akahu.connection_timeout', 30);
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-12T21:30:00+12:00'));
+
+        $client = Mockery::mock(ClientInterface::class);
+        // One attempt: the 429 arrives with budget left, but the wait it asks for uses all
+        // of it. Retrying after that wait would overrun the bound the caller set.
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(fn (string $method, string $path): bool => 'POST' === $method && 'refresh' === $path)
+            ->andThrow(new RequestException(
+                'Too Many Requests',
+                new Request('POST', 'refresh'),
+                new Response(429, ['Retry-After' => '60'], 'rate limited')
+            ));
+
+        $sleeps  = [];
+        $service = new AkahuService($client);
+        $service->setConfiguration(Configuration::fromArray([
+            'flow'             => 'akahu',
+            'akahu_app_token'  => 'app-token',
+            'akahu_user_token' => 'user-token',
+        ]));
+        // Unlike the shared handler, this one moves the clock, which is the whole point.
+        $service->setSleepHandler(static function (int $seconds) use (&$sleeps): void {
+            $sleeps[] = $seconds;
+            CarbonImmutable::setTestNow(CarbonImmutable::now()->addSeconds($seconds));
+        });
+
+        $this->expectException(ImporterErrorException::class);
+
+        try {
+            $service->triggerRefreshWithin(3);
+        } finally {
+            $this->assertSame([3], $sleeps);
+        }
     }
 }

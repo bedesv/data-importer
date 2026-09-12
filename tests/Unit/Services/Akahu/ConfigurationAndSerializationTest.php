@@ -73,4 +73,43 @@ class ConfigurationAndSerializationTest extends TestCase
         $this->assertSame('12-3456-1234567-00', (string) ($restored->raw['account_number'] ?? ''));
         $this->assertSame('12-3456-1234567-00', (string) ($restored->raw['meta']['account_number'] ?? ''));
     }
+    public function test_akahu_force_refresh_round_trips_through_import_job_serialization(): void
+    {
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+        $job->setAkahuForceRefresh(true);
+
+        $job->setAkahuForcedRefreshAt('2026-09-12T10:00:00+12:00');
+
+        $restored = ImportJob::fromArray($job->toArray());
+
+        $this->assertTrue($restored->getAkahuForceRefresh());
+        $this->assertSame('2026-09-12T10:00:00+12:00', $restored->getAkahuForcedRefreshAt());
+    }
+
+    public function test_akahu_force_refresh_stays_out_of_the_downloadable_configuration(): void
+    {
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+        $job->setAkahuForceRefresh(true);
+
+        // The flag is a per-run choice. Writing it into the configuration would make the
+        // exported config file force a refresh on every future import.
+        $this->assertArrayNotHasKey('akahu_force_refresh', $job->getConfiguration()->toArray());
+    }
+
+    public function test_import_job_without_a_stored_force_refresh_flag_defaults_to_false(): void
+    {
+        $job   = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray(['flow' => 'akahu']));
+
+        // Jobs written to disk before this flag existed must still restore.
+        $array = $job->toArray();
+        unset($array['akahu_force_refresh']);
+
+        $this->assertFalse(ImportJob::fromArray($array)->getAkahuForceRefresh());
+    }
 }

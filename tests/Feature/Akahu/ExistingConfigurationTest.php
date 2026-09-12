@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Akahu;
 
 use App\Http\Controllers\Import\UploadController;
+use App\Repository\ImportJob\ImportJobRepository;
 use App\Services\Akahu\AkahuService;
 use App\Services\Shared\Configuration\Configuration;
 use Illuminate\Support\Facades\Storage;
@@ -101,5 +102,68 @@ class ExistingConfigurationTest extends TestCase
 
         $this->assertStringNotContainsString('name="akahu_mortgage_payment_pattern"', $html);
         $this->assertStringNotContainsString('secret-pattern', $html);
+    }
+
+    public function test_akahu_upload_partial_offers_a_force_refresh_checkbox(): void
+    {
+        $html = view('import.003-upload.partials.akahu', [
+            'errors'   => new ViewErrorBag(),
+            'settings' => ['akahu' => ['app_token' => '', 'user_token' => '', 'mortgage_payment_pattern' => '']],
+        ])->render();
+
+        $this->assertStringContainsString('name="akahu_force_refresh"', $html);
+    }
+
+    public function test_akahu_upload_stores_the_force_refresh_choice_on_the_import_job(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+
+        Storage::fake('configurations');
+        Storage::disk('configurations')->put('import.json', json_encode([
+            'version' => 3,
+            'flow'    => 'akahu',
+        ], JSON_THROW_ON_ERROR));
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('validateCredentials')->once()->andReturn([]);
+        app()->instance(AkahuService::class, $service);
+
+        $response   = $this->post(route('new-import.post', ['akahu']), [
+            'existing_config'     => 'import.json',
+            'akahu_force_refresh' => '1',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $identifier = basename((string) $response->headers->get('Location'));
+
+        $this->assertTrue((new ImportJobRepository())->find($identifier)->getAkahuForceRefresh());
+    }
+
+    public function test_akahu_upload_leaves_force_refresh_off_when_the_box_is_unchecked(): void
+    {
+        config()->set('akahu.app_token', 'env-app');
+        config()->set('akahu.user_token', 'env-user');
+
+        Storage::fake('configurations');
+        Storage::disk('configurations')->put('import.json', json_encode([
+            'version' => 3,
+            'flow'    => 'akahu',
+        ], JSON_THROW_ON_ERROR));
+
+        $service = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $service->shouldReceive('validateCredentials')->once()->andReturn([]);
+        app()->instance(AkahuService::class, $service);
+
+        $response   = $this->post(route('new-import.post', ['akahu']), [
+            'existing_config' => 'import.json',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $identifier = basename((string) $response->headers->get('Location'));
+
+        $this->assertFalse((new ImportJobRepository())->find($identifier)->getAkahuForceRefresh());
     }
 }

@@ -12,6 +12,7 @@ use App\Services\Akahu\Model\Account;
 use App\Services\Akahu\Model\PendingTransaction;
 use App\Services\Akahu\Model\Transaction;
 use App\Services\Shared\Configuration\Configuration;
+use Carbon\CarbonImmutable;
 use GrumpyDictator\FFIIIApiSupport\Model\Account as FireflyAccount;
 use Mockery;
 use Tests\TestCase;
@@ -36,7 +37,7 @@ class RoutineManagerTest extends TestCase
         ];
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
-        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'])->andReturn($serviceAccounts);
+        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'], false, null)->andReturn($serviceAccounts);
         $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
@@ -136,7 +137,7 @@ class RoutineManagerTest extends TestCase
         ];
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
-        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1', 'acc-2'])->andReturn($serviceAccounts);
+        $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1', 'acc-2'], false, null)->andReturn($serviceAccounts);
         $service->shouldReceive('getRefreshWarnings')->andReturn([]);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
@@ -202,5 +203,42 @@ class RoutineManagerTest extends TestCase
         $this->assertSame('transfer', $transactions[0]['transactions'][0]['type']);
         $this->assertSame(21, $transactions[0]['transactions'][0]['source_id']);
         $this->assertSame(22, $transactions[0]['transactions'][0]['destination_id']);
+    }
+    public function test_routine_manager_passes_the_forced_refresh_flag_to_the_service(): void
+    {
+        $serviceAccounts = [
+            Account::fromArray([
+                '_id'      => 'acc-1',
+                'name'     => 'Cheque',
+                'currency' => 'NZD',
+                'status'   => 'active',
+            ]),
+        ];
+        $service         = Mockery::mock(AkahuService::class);
+        $service->shouldReceive('setConfiguration')->once();
+        $triggeredAt     = CarbonImmutable::parse('2026-09-12T21:30:45.700000+12:00');
+        $service->shouldReceive('ensureFreshAccounts')
+            ->once()
+            ->with(['acc-1'], true, Mockery::on(fn (?CarbonImmutable $at): bool => $at instanceof CarbonImmutable && $at->equalTo($triggeredAt)))
+            ->andReturn($serviceAccounts);
+        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
+        $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([]);
+        $service->shouldReceive('fetchPendingTransactions')->andReturn([]);
+        app()->instance(AkahuService::class, $service);
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration(Configuration::fromArray([
+            'flow'     => 'akahu',
+            'accounts' => ['acc-1' => 11],
+        ]));
+        $job->setServiceAccounts($serviceAccounts);
+        $job->setAkahuForceRefresh(true);
+        // Fractional seconds must survive the job, or conversion compares against a
+        // trigger time earlier than the one that actually fired.
+        $job->setAkahuForcedRefreshAt($triggeredAt->format('Y-m-d\TH:i:s.uP'));
+
+        $manager = new RoutineManager($job);
+        $manager->start();
     }
 }
