@@ -139,6 +139,49 @@ class AkahuServiceTest extends TestCase
         $this->assertSame('tx-1', $transactions[0]->getIdentifier());
     }
 
+    /**
+     * Akahu's transaction window is exclusive at `start` and inclusive at `end`, so the
+     * query has to sit one millisecond outside the local day boundaries. Banks that report
+     * date-only transactions (TSB) get stamped at exactly local midnight, so an on-the-nose
+     * `start` silently drops every one of them on the first day of the range.
+     */
+    public function test_date_query_brackets_the_local_day_boundaries(): void
+    {
+        config()->set('akahu.connection_timeout', 30);
+        config()->set('app.timezone', 'Pacific/Auckland');
+
+        $captured = [];
+        $client   = Mockery::mock(ClientInterface::class);
+        $client
+            ->shouldReceive('request')
+            ->once()
+            ->withArgs(function (string $method, string $path, array $options) use (&$captured): bool {
+                $captured = $options['query'];
+
+                return true;
+            })
+            ->andReturn(new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'items'  => [],
+                'cursor' => ['next' => null],
+            ], JSON_THROW_ON_ERROR)));
+
+        $service = new AkahuService($client);
+        $service->setConfiguration(Configuration::fromArray([
+            'flow'             => 'akahu',
+            'akahu_app_token'  => 'app-token',
+            'akahu_user_token' => 'user-token',
+            'date_not_before'  => '2026-08-28',
+            'date_not_after'   => '2026-08-31',
+        ]));
+
+        $service->fetchTransactions('acc-123');
+
+        // 2026-08-28 00:00 NZST is 2026-08-27T12:00:00Z; step back so it is included.
+        $this->assertSame('2026-08-27T11:59:59.999Z', $captured['start']);
+        // 2026-09-01 00:00 NZST is 2026-08-31T12:00:00Z; step back so the next day is not.
+        $this->assertSame('2026-08-31T11:59:59.999Z', $captured['end']);
+    }
+
     public function test_fetch_pending_transactions_uses_account_scoped_endpoint(): void
     {
         config()->set('akahu.connection_timeout', 30);

@@ -407,25 +407,42 @@ class AkahuService
         return $json;
     }
 
+    /**
+     * Akahu treats the window as (start, end]: `start` is exclusive, `end` is inclusive.
+     * Banks that report date-only transactions (TSB, for one) get stamped at exactly local
+     * midnight, so a `start` sitting on the boundary drops every one of them on the first
+     * day, and an `end` on the next day's boundary pulls in a day that was not asked for.
+     * Stepping both bounds back one millisecond turns the window into the [start, end] the
+     * rest of the importer assumes.
+     */
     private function buildDateQuery(): array
     {
         $query = [];
 
         if ('' !== $this->configuration->getDateNotBefore()) {
-            $query['start'] = CarbonImmutable::parse($this->configuration->getDateNotBefore(), config('app.timezone'))
-                ->startOfDay()
-                ->utc()
-                ->toIso8601String();
+            $query['start'] = self::exclusiveBound(
+                CarbonImmutable::parse($this->configuration->getDateNotBefore(), config('app.timezone'))
+                    ->startOfDay()
+            );
         }
         if ('' !== $this->configuration->getDateNotAfter()) {
-            $query['end'] = CarbonImmutable::parse($this->configuration->getDateNotAfter(), config('app.timezone'))
-                ->addDay()
-                ->startOfDay()
-                ->utc()
-                ->toIso8601String();
+            $query['end'] = self::exclusiveBound(
+                CarbonImmutable::parse($this->configuration->getDateNotAfter(), config('app.timezone'))
+                    ->addDay()
+                    ->startOfDay()
+            );
         }
 
         return $query;
+    }
+
+    /**
+     * Millisecond precision matters here: Akahu compares the instant, and its own timestamps
+     * carry milliseconds, so a whole-second bound would still land on the boundary.
+     */
+    private static function exclusiveBound(CarbonImmutable $moment): string
+    {
+        return $moment->utc()->subMilliseconds(1)->format('Y-m-d\TH:i:s.v\Z');
     }
 
     private function getHeaders(#[SensitiveParameter] string $appToken, #[SensitiveParameter] string $userToken): array
