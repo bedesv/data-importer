@@ -2,7 +2,9 @@ name: Build and publish Docker images
 
 # Builds the web and cli images and pushes them to GitHub Container Registry
 # (ghcr.io) under this repository's owner. Uses the built-in GITHUB_TOKEN, so
-# no registry secrets need to be configured.
+# no registry secrets need to be configured. After a successful dev publish,
+# RENOVATE_DISPATCH_TOKEN notifies the central Renovate workflow. Setup:
+# https://github.com/bedesv/homelab-komodo/blob/main/docs/first-party-image-updates.md
 
 on:
   push:
@@ -82,3 +84,20 @@ jobs:
             version=${{ github.ref_name }}
             gitrevision=${{ github.sha }}
             isodate=${{ github.event.repository.updated_at }}
+
+  notify-renovate:
+    name: Notify Renovate
+    needs: build
+    if: ${{ github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Dispatch image digest update
+        env:
+          GH_TOKEN: ${{ secrets.RENOVATE_DISPATCH_TOKEN }}
+          DISPATCH_ID: data-importer-publish-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh api --method POST \
+            repos/bedesv/homelab-komodo/actions/workflows/renovate.yml/dispatches \
+            --field ref=main \
+            --field "inputs[dispatch_id]=$DISPATCH_ID"
