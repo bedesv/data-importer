@@ -78,7 +78,7 @@ COPY . .
 COPY --from=frontend /app/public/build ./public/build
 
 # Generate the production autoloader and run the usual Composer scripts.
-RUN composer dump-autoload --no-dev --no-interaction --optimize --no-progress
+RUN composer dump-autoload --no-dev --no-interaction --optimize
 
 # Writable Laravel directories.
 RUN mkdir -p \
