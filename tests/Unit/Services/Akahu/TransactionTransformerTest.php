@@ -17,7 +17,7 @@ class TransactionTransformerTest extends TestCase
     public function test_transfer_between_imported_accounts_keeps_credit_side_only(): void
     {
         $transformer   = new TransactionTransformer();
-        $configuration = Configuration::fromArray(['flow' => 'akahu']);
+        $configuration = Configuration::fromArray(['flow' => 'akahu', 'mapping' => ['category_names' => ['Transfers' => 'Spending']]]);
         $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'formatted_account' => '12-3456-1111111-00', 'currency' => 'NZD', 'status' => 'active']);
         $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Savings', 'formatted_account' => '12-3456-9999999-00', 'currency' => 'NZD', 'status' => 'active']);
         $debit         = Transaction::fromArray([
@@ -59,6 +59,7 @@ class TransactionTransformerTest extends TestCase
         $configuration = Configuration::fromArray([
             'flow'                           => 'akahu',
             'akahu_mortgage_payment_pattern' => '^DUE \\d{4} (TO|FR) \\d{7}-\\d{2}$',
+            'mapping'                        => ['category_names' => ['Mortgage' => 'Mortgage Interest']],
         ]);
         $account       = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD', 'status' => 'active']);
         $opposing      = Account::fromArray(['_id' => 'acc-2', 'name' => 'Mortgage', 'formatted_account' => '12-3456-1234567-00', 'currency' => 'NZD', 'status' => 'active']);
@@ -70,6 +71,7 @@ class TransactionTransformerTest extends TestCase
             'amount'      => -1000,
             'type'        => 'TRANSFER',
             'meta'        => ['other_account' => '12-3456-1234567-00'],
+            'category'    => 'Mortgage',
         ]);
 
         $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10, 'acc-2' => 11], [], [$account, $opposing]);
@@ -81,6 +83,50 @@ class TransactionTransformerTest extends TestCase
         $this->assertSame(11, $result['destination_id']);
         $this->assertSame('Mortgage', $result['destination_name']);
         $this->assertNull($result['category_name']);
+    }
+
+    public function test_category_mapping_preserves_extraction_and_uses_one_exact_lookup(): void
+    {
+        $account = Account::fromArray(['_id' => 'acc-1', 'name' => 'Cheque', 'currency' => 'NZD']);
+        $transformer = new TransactionTransformer();
+        $cases = [
+            ['Coffee', ['Coffee' => 'Eating out'], 'Eating out'],
+            ['Coffee', [], 'Coffee'],
+            ['coffee', ['Coffee' => 'Eating out'], 'coffee'],
+            [' Coffee ', ['Coffee' => 'Eating out'], ' Coffee '],
+            [['name' => 'Coffee', 'group' => 'Power', 'label' => 'Other'], ['Coffee' => 'Eating out', 'Power' => 'Utilities'], 'Eating out'],
+            [['name' => '', 'group' => 'Power', 'label' => 'Other'], ['Power' => 'Utilities'], 'Utilities'],
+            [['name' => '', 'group' => '', 'label' => 'Coffee'], ['Coffee' => 'Eating out'], 'Eating out'],
+            [null, ['' => 'Spending'], null],
+            ['Coffee', 'invalid', 'Coffee'],
+            ['Coffee', ['Coffee' => ''], 'Coffee'],
+            ['Coffee', ['Coffee' => null], 'Coffee'],
+            ['Coffee', ['Coffee' => 42], 'Coffee'],
+            ['Coffee', ['Coffee' => ['Eating out']], 'Coffee'],
+            ['Coffee', ['Coffee' => 'Eating out', 'Eating out' => 'Food'], 'Eating out'],
+            ['Coffee', ['Coffee' => ' '], ' '],
+        ];
+
+        foreach ($cases as [$category, $map, $expected]) {
+            $configuration = Configuration::fromArray(['flow' => 'akahu']);
+            $configuration->setMapping(['category_names' => $map]);
+            $transaction = Transaction::fromArray([
+                '_id' => 'category-test', '_account' => 'acc-1', 'date' => '2026-03-10T09:00:00Z',
+                'description' => 'Purchase', 'amount' => -5, 'type' => 'EFTPOS', 'category' => $category,
+            ]);
+            $result = $transformer->transform($transaction, $account, $configuration, ['acc-1' => 10], []);
+            $this->assertSame($expected, $result['category_name']);
+        }
+
+        $transaction = Transaction::fromArray([
+            '_id' => 'no-category', '_account' => 'acc-1', 'date' => '2026-03-10T09:00:00Z',
+            'description' => 'Purchase', 'amount' => -5, 'type' => 'EFTPOS',
+        ]);
+        $result = $transformer->transform($transaction, $account, Configuration::fromArray(['flow' => 'akahu']), ['acc-1' => 10], []);
+        $this->assertNull($result['category_name']);
+        $transaction = Transaction::fromArray([...$transaction->toArray(), 'category' => 'Coffee']);
+        $result = $transformer->transform($transaction, $account, Configuration::fromArray(['flow' => 'akahu']), ['acc-1' => 10], []);
+        $this->assertSame('Coffee', $result['category_name']);
     }
 
     public function test_mortgage_transfer_resolves_loan_from_description_reference_suffix(): void

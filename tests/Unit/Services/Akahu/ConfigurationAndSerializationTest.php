@@ -11,6 +11,25 @@ use Tests\TestCase;
 
 class ConfigurationAndSerializationTest extends TestCase
 {
+    public function test_category_and_account_mappings_survive_configuration_and_job_serialization(): void
+    {
+        $mapping = [0 => ['Cafe' => 10], 'category_names' => ['Coffee' => 'Eating out']];
+        $configuration = Configuration::fromArray(['flow' => 'akahu', 'mapping' => $mapping]);
+        $this->assertSame($mapping, $configuration->toArray()['mapping']);
+        $configuration->setMapping($mapping);
+        $this->assertSame($mapping, $configuration->getMapping());
+
+        $job = ImportJob::createNew();
+        $job->setFlow('akahu');
+        $job->setConfiguration($configuration);
+        $this->assertSame($mapping, ImportJob::fromArray($job->toArray())->getConfiguration()->getMapping());
+
+        $configuration->setMapping([0 => ['Cafe' => 10], 'category_names' => 'invalid']);
+        $this->assertSame([0 => ['Cafe' => 10], 'category_names' => 'invalid'], $configuration->getMapping());
+        $job->setConfiguration($configuration);
+        $this->assertSame('invalid', ImportJob::fromArray($job->toArray())->getConfiguration()->getMapping()['category_names']);
+    }
+
     public function test_configuration_round_trips_akahu_fields(): void
     {
         $configuration = Configuration::fromArray([

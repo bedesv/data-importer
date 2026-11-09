@@ -47,6 +47,14 @@ final class TransactionTransformer
         $opposingFirefly   = $isInternal ? $this->getMappedAccount($opposingAccount, $accountMapping, $newAccountConfig) : ['id' => null, 'name' => $opposingName];
         $source            = $isIncoming ? $opposingFirefly : $fireflyAccount;
         $destination       = $isIncoming ? $fireflyAccount : $opposingFirefly;
+        $category          = $isInternal ? null : $this->extractCategory($transaction);
+        $categoryNames     = $configuration->getMapping()['category_names'] ?? null;
+        if (null !== $category && is_array($categoryNames)) {
+            $mappedCategory = $categoryNames[$category] ?? null;
+            if (is_string($mappedCategory) && '' !== $mappedCategory) {
+                $category = $mappedCategory;
+            }
+        }
 
         return [
             'type'               => $isMortgagePayment ? 'withdrawal' : ($isInternal ? 'transfer' : ($isIncoming ? 'deposit' : 'withdrawal')),
@@ -58,7 +66,7 @@ final class TransactionTransformer
             'destination_id'     => $destination['id'] ?? null,
             'destination_name'   => $destination['name'] ?? null,
             'currency_code'      => '' !== $account->currency ? $account->currency : config('akahu.default_currency', 'NZD'),
-            'category_name'      => $isInternal ? null : $this->extractCategory($transaction),
+            'category_name'      => $category,
             'reconciled'         => false,
             'notes'              => $this->buildNotes($transaction),
             'tags'               => $this->buildTags($transaction),
