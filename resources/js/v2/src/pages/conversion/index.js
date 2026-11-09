@@ -176,6 +176,9 @@ let index = function () {
                 if ('conv_done' === this.pageStatus.status) {
                     console.log('Job is done!');
                     this.post.done = true;
+                    if ('akahu' === this.flow && Object.values(this.messages.warnings).some((messages) => messages.length > 0)) {
+                        return;
+                    }
                     setTimeout(function () {
                         console.log('Do redirect!')
                         this.redirectToImport();

@@ -42,7 +42,7 @@ After starting the importer using the normal upstream instructions, choose **Aka
 | `AKAHU_USER_TOKEN` | Empty | Akahu user token; required. |
 | `AKAHU_MORTGAGE_PAYMENT_PATTERN` | Empty | Optional regular expression for identifying mortgage-payment descriptions. |
 | `AKAHU_ALWAYS_REFRESH` | `true` | Request fresh account data for every import. |
-| `AKAHU_STALE_REFRESH_HOURS` | `2` | Maximum data age when `AKAHU_ALWAYS_REFRESH` is disabled, and the age beyond which an incomplete refresh fails the import. |
+| `AKAHU_STALE_REFRESH_HOURS` | `2` | Age beyond which account data is considered stale and a refresh is requested when `AKAHU_ALWAYS_REFRESH` is disabled. |
 | `AKAHU_REFRESH_COOLDOWN_MINUTES` | `15` | How long after a refresh the importer reuses Akahu's existing data instead of asking again. |
 | `AKAHU_REFRESH_POLL_SECONDS` | `10` | Delay between refresh-status checks. |
 | `AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS` | `45` | Maximum time to spend waiting for a refresh. Keep it below the web server's own timeout. |
@@ -80,7 +80,7 @@ By default, each import requests a fresh update from Akahu and waits for all sel
 
 Akahu declines a refresh that arrives too soon after the previous one, and it does so without saying so: the request succeeds but no new data arrives. The importer therefore treats accounts refreshed within `AKAHU_REFRESH_COOLDOWN_MINUTES` as already fresh and does not ask again, and it waits for a refresh it triggered earlier in the same import rather than triggering a second one.
 
-If a refresh still cannot be completed — Akahu rate-limits the request, or it does not land within `AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS` — the import continues with the data Akahu already holds and shows a warning on the conversion page, as long as that data is younger than `AKAHU_STALE_REFRESH_HOURS`. Only genuinely stale data fails the import.
+If a refresh cannot be completed — Akahu rate-limits the request, or it does not land within `AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS` — the import continues with the data Akahu already holds and shows a warning. The warning names any selected accounts whose transaction data is stale or has an unknown refresh time, so recent transactions may be missing. A selected account that Akahu does not return still stops the import. In the web flow, review the warning and select **Continue import**; CLI imports log the warning and proceed automatically.
 
 `AKAHU_REFRESH_WAIT_TIMEOUT_SECONDS` bounds the whole wait, which happens inside the conversion request. Keep it below the web server's own timeout — nginx defaults to 60 seconds — or a slow refresh returns a gateway timeout to the browser instead of a readable error.
 

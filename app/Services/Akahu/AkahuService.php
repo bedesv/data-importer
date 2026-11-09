@@ -191,8 +191,8 @@ class AkahuService
     }
 
     /**
-     * A refresh we could not complete is only fatal when the data Akahu already holds is
-     * too old to import. Otherwise the import continues and the user is warned.
+     * Continue with the data Akahu already holds and report accounts that remain stale.
+     * A missing selected account is different: there is no data to import for it.
      *
      * @param array<Account> $accounts
      * @return array<Account>
@@ -200,15 +200,30 @@ class AkahuService
      */
     private function useExistingData(array $accounts, array $selectedAccountIds, string $reason): array
     {
-        if ($this->needsRefresh($accounts, $selectedAccountIds)) {
-            throw new ImporterErrorException(sprintf('%s, and the data it already holds is too old to import.', $reason));
+        $byId = [];
+        foreach ($accounts as $account) {
+            $byId[$account->getIdentifier()] = $account;
         }
 
-        $warning                 = sprintf(
-            '%s. Continuing with the account data Akahu already holds, which is less than %d hour(s) old.',
-            $reason,
-            (int) config('akahu.stale_refresh_hours', 2)
-        );
+        $cutoff = CarbonImmutable::now()->subHours((int) config('akahu.stale_refresh_hours', 2));
+        $stale  = [];
+        foreach ($selectedAccountIds as $selectedId) {
+            $account = $byId[$selectedId] ?? null;
+            if (null === $account) {
+                throw new ImporterErrorException('Akahu did not return a selected account. Check the saved account mappings and connection.');
+            }
+
+            $refreshed = $account->getRefreshedTransactions();
+            if (null === $refreshed || $refreshed->lt($cutoff)) {
+                // Warnings are rendered as HTML in the web importer.
+                $stale[] = sprintf('%s (transactions last refreshed: %s)', e($account->getDisplayName()), null === $refreshed ? 'unknown' : $refreshed->toIso8601String());
+            }
+        }
+
+        $warning = sprintf('%s. Continuing with the account data Akahu already holds.', $reason);
+        if ([] !== $stale) {
+            $warning .= ' Stale account data may be missing recent transactions: '.implode('; ', $stale).'.';
+        }
         Log::warning($warning);
         $this->refreshWarnings[] = $warning;
 

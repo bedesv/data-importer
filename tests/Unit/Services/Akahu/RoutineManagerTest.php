@@ -38,7 +38,7 @@ class RoutineManagerTest extends TestCase
         $service         = Mockery::mock(AkahuService::class);
         $service->shouldReceive('setConfiguration')->once();
         $service->shouldReceive('ensureFreshAccounts')->once()->with(['acc-1'], false, null)->andReturn($serviceAccounts);
-        $service->shouldReceive('getRefreshWarnings')->andReturn([]);
+        $service->shouldReceive('getRefreshWarnings')->andReturn(['Stale account data may be missing recent transactions.']);
         $service->shouldReceive('fetchTransactions')->once()->with('acc-1')->andReturn([
             Transaction::fromArray([
                 '_id'         => 'tx-1',
@@ -79,6 +79,7 @@ class RoutineManagerTest extends TestCase
         $this->assertCount(2, $transactions);
         $this->assertSame('tx-1', $transactions[0]['transactions'][0]['external_id']);
         $this->assertContains('pending', $transactions[1]['transactions'][0]['tags']);
+        $this->assertSame(['Stale account data may be missing recent transactions.'], $job->conversionStatus->warnings[0]);
     }
 
     public function test_routine_manager_fails_clearly_when_refresh_times_out(): void

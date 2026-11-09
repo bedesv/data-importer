@@ -400,7 +400,7 @@ trait AutoImports
         $list = [
             [$this->importJob->conversionStatus->messages, 'info'],
             [$this->importJob->conversionStatus->warnings, 'warn'],
-            [$this->importJob->conversionStatus->warnings, 'error'],
+            [$this->importJob->conversionStatus->errors, 'error'],
             [$this->importJob->conversionStatus->rateLimits, 'warn'],
         ];
         foreach ($list as $set) {

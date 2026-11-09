@@ -65,11 +65,16 @@
                             <x-conversion-messages/>
                         </div>
                         <div x-show="showWhenDone()" class="card-body">
-                            <p>
+                            <p x-show="'akahu' !== flow || !Object.values(messages.warnings).some((items) => items.length > 0)">
                                 <span class="fas fa-sync fa-spin"></span> The conversion routine has finished 🎉. Please
                                 wait to be redirected!
                             </p>
+                            <p x-show="'akahu' === flow && Object.values(messages.warnings).some((items) => items.length > 0)">
+                                Conversion finished with warnings. Review them, then continue the import.
+                            </p>
                             <x-conversion-messages/>
+                            <button x-show="'akahu' === flow && Object.values(messages.warnings).some((items) => items.length > 0)"
+                                    class="btn btn-primary" type="button" @click="redirectToImport()">Continue import &rarr;</button>
                         </div>
                         <div x-show="showIfError()" class="card-body">
                             <p class="text-danger">
