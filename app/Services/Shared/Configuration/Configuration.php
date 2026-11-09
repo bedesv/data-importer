@@ -783,7 +783,9 @@ final class Configuration
     {
         $newMap        = [];
         foreach ($mapping as $column => $map) {
-            ksort($map);
+            if ('category_names' !== $column || is_array($map)) {
+                ksort($map);
+            }
             $newMap[$column] = $map;
         }
         $this->mapping = $newMap;
