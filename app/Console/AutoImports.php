@@ -180,6 +180,12 @@ trait AutoImports
             foreach ($importableFiles as $importableFile) {
                 try {
                     $exitCodes[$importableFile] = $this->importFileAsImportJob($jsonFile, $importableFile);
+                    // NOTHING_WAS_IMPORTED can also mean conversion failed with an
+                    // [a111] error; do not report that case as an empty successful run.
+                    if (ExitCode::NOTHING_WAS_IMPORTED->value === $exitCodes[$importableFile]
+                        && ([] !== $this->importJob->conversionStatus->errors || [] !== $this->importJob->submissionStatus->errors)) {
+                        $exitCodes[$importableFile] = ExitCode::GENERAL_ERROR->value;
+                    }
                 } catch (ImporterErrorException $e) {
                     Log::error(sprintf('Could not complete import from file "%s".', $importableFile));
                     Log::error(sprintf('[%s]: %s', config('importer.version'), $e->getMessage()));

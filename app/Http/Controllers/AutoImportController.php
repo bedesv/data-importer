@@ -27,6 +27,7 @@ namespace App\Http\Controllers;
 use App\Console\AutoImports;
 use App\Console\HaveAccess;
 use App\Console\VerifyJSON;
+use App\Enums\ExitCode;
 use App\Exceptions\ImporterErrorException;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -74,16 +75,31 @@ final class AutoImportController extends Controller
 
         $files        = $this->getFiles($directory);
         if (0 === count($files)) {
-            return response()->json(['error' => 'No files found.']);
+            return $this->importResponse([]);
         }
         Log::info(sprintf('[%s] Found %d (importable +) JSON file sets in %s', config('importer.version'), count($files), $directory));
 
         try {
-            $this->importFiles($directory, $files);
+            $results = $this->importFiles($directory, $files);
         } catch (ImporterErrorException $e) {
             Log::error(sprintf('[%s]: %s', config('importer.version'), $e->getMessage()));
 
             throw new ImporterErrorException(sprintf('Import exception (see the logs): %s', $e->getMessage()), 0, $e);
+        }
+
+        return $this->importResponse($results);
+    }
+
+    private function importResponse(array $results): JsonResponse
+    {
+        if ([] === $results) {
+            return response()->json(['error' => 'No files found.'], 422);
+        }
+
+        foreach ($results as $code) {
+            if (!in_array($code, [ExitCode::SUCCESS->value, ExitCode::NOTHING_WAS_IMPORTED->value], true)) {
+                return response()->json(['error' => 'One or more imports failed. Check the importer logs.'], 500);
+            }
         }
 
         return response()->json(['message' => 'Seems to have worked!']);
