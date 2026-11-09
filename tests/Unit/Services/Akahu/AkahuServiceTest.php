@@ -465,15 +465,16 @@ class AkahuServiceTest extends TestCase
         $this->assertStringContainsString('did not finish the refresh in time', $service->getRefreshWarnings()[0]);
     }
 
-    public function test_ensure_fresh_accounts_throws_when_the_refresh_never_lands_and_data_is_stale(): void
+    public function test_ensure_fresh_accounts_waits_until_deadline_then_warns_about_stale_data(): void
     {
-        $this->applyRefreshConfig(cooldownMinutes: 0, waitTimeoutSeconds: 0);
+        CarbonImmutable::setTestNow('2026-11-09T05:00:00Z');
+        $this->applyRefreshConfig(cooldownMinutes: 0, waitTimeoutSeconds: 20);
 
-        $refreshedAt = now()->subHours(5)->toIso8601String();
+        $refreshedAt = CarbonImmutable::now()->subHours(5)->toIso8601String();
         $client      = Mockery::mock(ClientInterface::class);
         $client
             ->shouldReceive('request')
-            ->twice()
+            ->times(4)
             ->withArgs(fn (string $method, string $path): bool => 'GET' === $method && 'accounts' === $path)
             ->andReturn($this->accountsResponse($refreshedAt));
         $client
@@ -484,18 +485,82 @@ class AkahuServiceTest extends TestCase
 
         $sleeps  = [];
         $service = $this->makeService($client, $sleeps);
+        $service->setSleepHandler(static function (int $seconds) use (&$sleeps): void {
+            $sleeps[] = $seconds;
+            CarbonImmutable::setTestNow(CarbonImmutable::now()->addSeconds($seconds));
+        });
 
+        $accounts = $service->ensureFreshAccounts(['acc-123']);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame([10, 10], $sleeps);
+        $this->assertCount(1, $service->getRefreshWarnings());
+        $this->assertStringContainsString('Stale account data may be missing recent transactions', $service->getRefreshWarnings()[0]);
+        $this->assertStringContainsString('Cheque (transactions last refreshed: '.$refreshedAt.')', $service->getRefreshWarnings()[0]);
+    }
+
+    public function test_ensure_fresh_accounts_continues_without_warning_when_refresh_finishes_before_deadline(): void
+    {
+        CarbonImmutable::setTestNow('2026-11-09T05:00:00Z');
+        $this->applyRefreshConfig(cooldownMinutes: 0, waitTimeoutSeconds: 20);
+        config()->set('akahu.always_refresh', false);
+        $client = Mockery::mock(ClientInterface::class);
+        $client->shouldReceive('request')->times(3)->withArgs(fn (string $method): bool => 'GET' === $method)
+            ->andReturn(
+                $this->accountsResponse(CarbonImmutable::now()->subHours(5)->toIso8601String()),
+                $this->accountsResponse(CarbonImmutable::now()->subHours(5)->toIso8601String()),
+                $this->accountsResponse(CarbonImmutable::now()->toIso8601String())
+            );
+        $client->shouldReceive('request')->once()->withArgs(fn (string $method): bool => 'POST' === $method)
+            ->andReturn(new Response(200, [], '{}'));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+        $service->setSleepHandler(static function (int $seconds) use (&$sleeps): void {
+            $sleeps[] = $seconds;
+            CarbonImmutable::setTestNow(CarbonImmutable::now()->addSeconds($seconds));
+        });
+        $this->assertCount(1, $service->ensureFreshAccounts(['acc-123']));
+        $this->assertSame([10], $sleeps);
+        $this->assertSame([], $service->getRefreshWarnings());
+    }
+
+    public function test_ensure_fresh_accounts_reports_unknown_refresh_time_and_escapes_account_name(): void
+    {
+        $this->applyRefreshConfig(cooldownMinutes: 0, waitTimeoutSeconds: 0);
+        $client = Mockery::mock(ClientInterface::class);
+        $client->shouldReceive('request')->twice()->withArgs(fn (string $method): bool => 'GET' === $method)
+            ->andReturn(new Response(200, [], json_encode(['items' => [['_id' => 'acc-123', 'name' => '<Card>']]], JSON_THROW_ON_ERROR)));
+        $client->shouldReceive('request')->once()->withArgs(fn (string $method): bool => 'POST' === $method)
+            ->andReturn(new Response(200, [], '{}'));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
+        $this->assertCount(1, $service->ensureFreshAccounts(['acc-123']));
+        $this->assertStringContainsString('&lt;Card&gt; (transactions last refreshed: unknown)', $service->getRefreshWarnings()[0]);
+    }
+
+    public function test_ensure_fresh_accounts_does_not_silently_skip_a_missing_selected_account(): void
+    {
+        $this->applyRefreshConfig(cooldownMinutes: 0, waitTimeoutSeconds: 0);
+        $client = Mockery::mock(ClientInterface::class);
+        $client->shouldReceive('request')->twice()->withArgs(fn (string $method): bool => 'GET' === $method)
+            ->andReturn($this->accountsResponse(now()->subHours(5)->toIso8601String()));
+        $client->shouldReceive('request')->once()->withArgs(fn (string $method): bool => 'POST' === $method)
+            ->andReturn(new Response(200, [], '{}'));
+
+        $sleeps  = [];
+        $service = $this->makeService($client, $sleeps);
         $this->expectException(ImporterErrorException::class);
-        $this->expectExceptionMessage('too old to import');
-
-        $service->ensureFreshAccounts(['acc-123']);
+        $this->expectExceptionMessage('Akahu did not return a selected account');
+        $service->ensureFreshAccounts(['missing-account']);
     }
 
     public function test_ensure_fresh_accounts_continues_when_akahu_rate_limits_the_refresh(): void
     {
         $this->applyRefreshConfig(cooldownMinutes: 0);
 
-        $refreshedAt = now()->subMinutes(5)->toIso8601String();
+        $refreshedAt = now()->subHours(5)->toIso8601String();
         $client      = Mockery::mock(ClientInterface::class);
         $client
             ->shouldReceive('request')
@@ -522,6 +587,7 @@ class AkahuServiceTest extends TestCase
         $this->assertSame([1, 1], $sleeps);
         $this->assertCount(1, $service->getRefreshWarnings());
         $this->assertStringContainsString('declined the refresh request', $service->getRefreshWarnings()[0]);
+        $this->assertStringContainsString('Stale account data may be missing recent transactions', $service->getRefreshWarnings()[0]);
     }
 
     public function test_ensure_fresh_accounts_never_sleeps_past_its_deadline(): void
