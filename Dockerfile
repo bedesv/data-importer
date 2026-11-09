@@ -21,16 +21,16 @@ FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 
 WORKDIR /app
 
-# Copy the whole source tree (node_modules/vendor are excluded via .dockerignore)
-# so the Laravel Vite plugin can resolve inputs and emit into ./public/build.
-COPY . .
-
-# Mirror the known-good dev build: install root workspace deps, then build the
-# `resources/js/v2` workspace. Output lands in ./public/build (+ manifest).
+# Keep dependency installation cached when only application source changes.
+COPY package.json package-lock.json ./
+COPY resources/js/v2/package.json ./resources/js/v2/package.json
 RUN npm install \
     && cd resources/js/v2 \
-    && npm install \
-    && npm run build
+    && npm install
+
+# The Vite plugin needs the application source to resolve its inputs.
+COPY . .
+RUN cd resources/js/v2 && npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: PHP runtime + application code + composer dependencies (shared base).
@@ -66,14 +66,19 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
+# Install packages independently of application source. Autoload generation and
+# Laravel package discovery still run after the source has been copied.
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --no-autoloader --no-scripts --no-progress
+
 # Application source (excludes vendor/, node_modules/, .env via .dockerignore).
 COPY . .
 
 # Built front-end assets from the frontend stage.
 COPY --from=frontend /app/public/build ./public/build
 
-# Production composer install (no dev deps, optimized autoloader).
-RUN composer install --no-dev --no-interaction --optimize-autoloader --no-progress
+# Generate the production autoloader and run the usual Composer scripts.
+RUN composer dump-autoload --no-dev --no-interaction --optimize
 
 # Writable Laravel directories.
 RUN mkdir -p \
